@@ -1,0 +1,114 @@
+{
+  "class_names": [
+    "Potato___Early_blight",
+    "Potato___Late_blight",
+    "Potato___healthy",
+    "Tomato___Bacterial_spot",
+    "Tomato___Early_blight",
+    "Tomato___Late_blight",
+    "Tomato___Leaf_Mold",
+    "Tomato___Septoria_leaf_spot",
+    "Tomato___Spider_mites Two-spotted_spider_mite",
+    "Tomato___Target_Spot",
+    "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
+    "Tomato___Tomato_mosaic_virus",
+    "Tomato___healthy"
+  ],
+  "classes": {
+    "Potato___Early_blight": {
+      "display_name": "Potato: Early Blight",
+      "crop": "Potato",
+      "status": "Diseased",
+      "pathogen": "Fungus (Alternaria solani)",
+      "recommendation": "Remove lower infected leaves, ensure adequate crop rotation, and apply copper-based fungicides."
+    },
+    "Potato___Late_blight": {
+      "display_name": "Potato: Late Blight",
+      "crop": "Potato",
+      "status": "Diseased",
+      "pathogen": "Water mold (Phytophthora infestans)",
+      "recommendation": "High severity. Destroy infected plants immediately, improve soil drainage, and avoid wet foliage."
+    },
+    "Potato___healthy": {
+      "display_name": "Potato: Healthy",
+      "crop": "Potato",
+      "status": "Healthy",
+      "pathogen": "None",
+      "recommendation": "Leaves appear completely healthy. Continue standard watering and fertilizing schedules."
+    },
+    "Tomato___Bacterial_spot": {
+      "display_name": "Tomato: Bacterial Spot",
+      "crop": "Tomato",
+      "status": "Diseased",
+      "pathogen": "Bacteria (Xanthomonas spp.)",
+      "recommendation": "Avoid overhead watering, sanitize tools between pruning, and apply fixed copper sprays."
+    },
+    "Tomato___Early_blight": {
+      "display_name": "Tomato: Early Blight",
+      "crop": "Tomato",
+      "status": "Diseased",
+      "pathogen": "Fungus (Alternaria linariae)",
+      "recommendation": "Mulch the soil surface, prune bottom leaves to stop splash-back, and use organic neem or fungicides."
+    },
+    "Tomato___Late_blight": {
+      "display_name": "Tomato: Late Blight",
+      "crop": "Tomato",
+      "status": "Diseased",
+      "pathogen": "Oomycete (Phytophthora infestans)",
+      "recommendation": "Act quickly: prune damaged vines, keep canopy aerated, and apply preventative bio-fungicides."
+    },
+    "Tomato___Leaf_Mold": {
+      "display_name": "Tomato: Leaf Mold",
+      "crop": "Tomato",
+      "status": "Diseased",
+      "pathogen": "Fungus (Passalora fulva)",
+      "recommendation": "Improve ventilation, lower relative humidity below 85%, and use resistant tomato varieties."
+    },
+    "Tomato___Septoria_leaf_spot": {
+      "display_name": "Tomato: Septoria Leaf Spot",
+      "crop": "Tomato",
+      "status": "Diseased",
+      "pathogen": "Fungus (Septoria lycopersici)",
+      "recommendation": "Remove infected lower foliage, avoid wetting foliage during irrigation, and rotate crops."
+    },
+    "Tomato___Spider_mites Two-spotted_spider_mite": {
+      "display_name": "Tomato: Spider Mites",
+      "crop": "Tomato",
+      "status": "Infested",
+      "pathogen": "Pest (Tetranychus urticae)",
+      "recommendation": "Apply insecticidal soap or horticultural oils under leaves. Release predatory mites if indoors."
+    },
+    "Tomato___Target_Spot": {
+      "display_name": "Tomato: Target Spot",
+      "crop": "Tomato",
+      "status": "Diseased",
+      "pathogen": "Fungus (Corynespora cassiicola)",
+      "recommendation": "Improve airflow between plants, keep foliage dry, and apply targeted copper/mancozeb fungicides."
+    },
+    "Tomato___Tomato_Yellow_Leaf_Curl_Virus": {
+      "display_name": "Tomato: Yellow Leaf Curl Virus",
+      "crop": "Tomato",
+      "status": "Diseased",
+      "pathogen": "Virus (TYLCV transmitted by Whiteflies)",
+      "recommendation": "Use yellow sticky traps and insect netting against whiteflies. Remove and burn heavily infected plants."
+    },
+    "Tomato___Tomato_mosaic_virus": {
+      "display_name": "Tomato: Mosaic Virus",
+      "crop": "Tomato",
+      "status": "Diseased",
+      "pathogen": "Tobamovirus (Mechanically transmitted)",
+      "recommendation": "Disinfect tools with 10% bleach, avoid handling plants when damp, and remove infected plants."
+    },
+    "Tomato___healthy": {
+      "display_name": "Tomato: Healthy",
+      "crop": "Tomato",
+      "status": "Healthy",
+      "pathogen": "None",
+      "recommendation": "Leaves appear vibrant and healthy. Maintain consistent moisture and balanced nitrogen levels."
+    }
+  },
+  "image_size": [
+    128,
+    128
+  ]
+}

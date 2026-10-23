@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+.vscode/
+
+# Model binaries (too large for standard git repos, track via releases or Git LFS)
+model/*.h5
+model/*.keras
+!model/class_indices.json
