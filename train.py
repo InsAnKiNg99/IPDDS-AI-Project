@@ -8,6 +8,7 @@ import os
 import sys
 import json
 import argparse
+import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers, models, callbacks
 
@@ -185,6 +186,64 @@ def build_model(num_classes, img_size=(128, 128)):
     model = models.Model(inputs=inputs, outputs=outputs, name="IPDDS_Potato_Tomato_CNN")
     return model
 
+def train_crop_classifier(model, train_ds, val_ds):
+    feature_extractor = models.Model(
+        inputs=model.input,
+        outputs=model.layers[-3].output,
+        name="IPDDS_Feature_Extractor"
+    )
+    crop_labels_by_class = tf.constant(
+        [0 if class_name.startswith("Potato") else 1 for class_name in POTATO_TOMATO_CLASSES],
+        dtype=tf.int32
+    )
+
+    def extract_features(dataset):
+        feature_batches = []
+        crop_label_batches = []
+        for images, disease_labels in dataset:
+            feature_batches.append(feature_extractor(images, training=False).numpy())
+            crop_label_batches.append(tf.gather(crop_labels_by_class, disease_labels).numpy())
+        return np.concatenate(feature_batches), np.concatenate(crop_label_batches)
+
+    train_features, train_crop_labels = extract_features(train_ds)
+    val_features, val_crop_labels = extract_features(val_ds)
+    crop_counts = np.bincount(train_crop_labels, minlength=2)
+    crop_class_weights = {
+        index: len(train_crop_labels) / (2 * count)
+        for index, count in enumerate(crop_counts)
+    }
+
+    crop_head = models.Sequential([
+        layers.Input(shape=(feature_extractor.output_shape[-1],)),
+        layers.Dense(2, activation="softmax")
+    ], name="IPDDS_Crop_Head")
+    crop_head.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+        loss="sparse_categorical_crossentropy",
+        metrics=["accuracy"]
+    )
+    crop_head.fit(
+        train_features,
+        train_crop_labels,
+        validation_data=(val_features, val_crop_labels),
+        class_weight=crop_class_weights,
+        epochs=30,
+        batch_size=128,
+        callbacks=[callbacks.EarlyStopping(
+            monitor="val_accuracy",
+            patience=4,
+            restore_best_weights=True
+        )]
+    )
+
+    crop_model = models.Model(
+        inputs=model.input,
+        outputs=crop_head(feature_extractor.output),
+        name="IPDDS_Crop_Classifier"
+    )
+    crop_model.save(os.path.join("model", "crop_type_model.keras"))
+    print("[+] Crop classifier saved to model/crop_type_model.keras (index 0: Potato, index 1: Tomato)")
+
 def train(dataset_dir=None, epochs=10, batch_size=32, img_size=(128, 128)):
     train_path, val_path = resolve_dataset_paths(dataset_dir)
     print("=" * 60)
@@ -277,6 +336,7 @@ def train(dataset_dir=None, epochs=10, batch_size=32, img_size=(128, 128)):
     model.save(keras_path)
     model.save(h5_path)
     print(f"\n[+] Training complete! Model saved to:\n  - {h5_path}\n  - {keras_path}")
+    train_crop_classifier(model, train_ds, val_ds)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Potato & Tomato Plant Disease Detector")

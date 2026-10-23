@@ -498,20 +498,27 @@ DEFAULT_CLASSES = [
     "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
 ]
 
-@st.cache_resource
-def load_trained_model():
+def resolve_trained_model_path():
     model_paths = [
         os.path.join("model", "disease_model.keras"),
         os.path.join("model", "disease_model.h5")
     ]
     for p in model_paths:
         if os.path.exists(p) and os.path.getsize(p) > 1024 * 100:
-            try:
-                model = tf.keras.models.load_model(p)
-                return model, p
-            except Exception:
-                pass
-    return None, None
+            return p
+    return None
+
+@st.cache_resource
+def load_trained_model(model_path, model_modified_ns):
+    if model_path is None:
+        return None, None
+    return tf.keras.models.load_model(model_path), model_path
+
+@st.cache_resource
+def load_crop_model(model_path, model_modified_ns):
+    if model_path is None:
+        return None
+    return tf.keras.models.load_model(model_path)
 
 def load_metadata():
     json_path = os.path.join("model", "class_indices.json")
@@ -526,7 +533,18 @@ def load_metadata():
     return DEFAULT_CLASSES, {}, (128, 128)
 
 class_names, metadata_map, target_img_size = load_metadata()
-model, loaded_path = load_trained_model()
+model_path = resolve_trained_model_path()
+model_modified_ns = os.stat(model_path).st_mtime_ns if model_path else 0
+model, loaded_path = load_trained_model(model_path, model_modified_ns)
+crop_model_path = os.path.join("model", "crop_type_model.keras")
+crop_model_modified_ns = os.stat(crop_model_path).st_mtime_ns if os.path.exists(crop_model_path) else 0
+crop_model = load_crop_model(crop_model_path if crop_model_modified_ns else None, crop_model_modified_ns)
+if model is not None and model.output_shape[-1] != len(class_names):
+    raise ValueError("The disease model output count does not match model/class_indices.json.")
+if crop_model is not None and crop_model.output_shape[-1] != 2:
+    raise ValueError("The crop model must output Potato and Tomato probabilities.")
+
+TOMATO_CROP_CONFIDENCE_THRESHOLD = 0.8
 
 # 5. Top Navigation Bar (Fixed Liquid Pill)
 st.markdown("""
@@ -594,6 +612,11 @@ with col_c1:
         label_visibility="collapsed",
         key="leaf_uploader"
     )
+    crop_override = st.selectbox(
+        "Crop identification",
+        ["Auto-detect", "Potato (manual)", "Tomato (manual)"],
+        help="Auto-detect uses the trained crop model. Select a crop manually if the automatic result is incorrect."
+    )
     
     st.markdown("<div style='font-size: 0.85rem; font-weight: 500; margin: 0.6rem 0 0.35rem 0;'>Or Select Benchmark Leaf</div>", unsafe_allow_html=True)
     b_col1, b_col2 = st.columns(2)
@@ -647,26 +670,66 @@ if eval_image is not None and model is not None:
     img_array = np.expand_dims(img_array, axis=0)
 
     preds = model.predict(img_array, verbose=0)[0]
+    if crop_model is not None:
+        crop_preds = crop_model.predict(img_array, verbose=0)[0]
+        crop_idx = 1 if crop_preds[1] >= TOMATO_CROP_CONFIDENCE_THRESHOLD else 0
+        detected_crop = ("Potato", "Tomato")[crop_idx]
+        crop_confidence = float(crop_preds[crop_idx]) * 100
+    else:
+        crop_class_indices = [
+            index for index, class_name in enumerate(class_names)
+            if class_name.startswith("Potato")
+        ]
+        tomato_class_indices = [
+            index for index, class_name in enumerate(class_names)
+            if class_name.startswith("Tomato")
+        ]
+        potato_probability = float(np.sum(preds[crop_class_indices]))
+        tomato_probability = float(np.sum(preds[tomato_class_indices]))
+        detected_crop = "Potato" if potato_probability >= tomato_probability else "Tomato"
+        crop_confidence = max(potato_probability, tomato_probability) * 100
+
+    crop_name = detected_crop if crop_override == "Auto-detect" else crop_override.split(" ", 1)[0]
+    if crop_override != "Auto-detect":
+        crop_confidence = None
+    crop_class_indices = [
+        index for index, class_name in enumerate(class_names)
+        if class_name.startswith(crop_name)
+    ]
+    if not crop_class_indices:
+        raise ValueError(f"No disease classes are configured for selected crop: {crop_name}")
+    crop_probability = float(np.sum(preds[crop_class_indices]))
+    if crop_probability <= 0:
+        raise ValueError(f"The disease model returned no probability for selected crop: {crop_name}")
+    crop_specific_preds = np.zeros_like(preds)
+    crop_specific_preds[crop_class_indices] = preds[crop_class_indices] / crop_probability
+    preds = crop_specific_preds
+
     pred_idx = int(np.argmax(preds))
     confidence = float(preds[pred_idx]) * 100
     raw_class = class_names[pred_idx] if pred_idx < len(class_names) else "Unknown"
-    
-    info = metadata_map.get(raw_class, {
-        "display_name": raw_class.replace("___", ": ").replace("_", " "),
-        "crop": "Tomato" if "Tomato" in raw_class else "Potato",
-        "status": "Healthy" if "healthy" in raw_class else "Diseased",
-        "pathogen": "Identified by Neural Network",
-        "recommendation": "Maintain proper cultivation and apply targeted treatment."
-    })
+
+    info = metadata_map.get(raw_class)
+    if info is None or not info.get("recommendation"):
+        raise KeyError(f"Missing disease and treatment metadata for predicted class: {raw_class}")
+    info = {**info, "crop": crop_name}
     pred_data = {
         "raw_class": raw_class,
         "info": info,
         "confidence": confidence,
+        "crop_confidence": crop_confidence,
+        "crop_selection": crop_override,
         "preds": preds
     }
 
 # Card 2: Neural Diagnosis
 with col_c2:
+    if (
+        pred_data is not None
+        and pred_data["crop_selection"] == "Auto-detect"
+        and pred_data["crop_confidence"] < 70
+    ):
+        st.warning("Crop identification is uncertain. Confirm Potato or Tomato using the selector before relying on the disease result.")
     st.markdown("""
     <div class="card-top-row">
         <div class="card-icon-square">
@@ -711,7 +774,7 @@ with col_c2:
             <div class="conf-bar-fill" style="width: {min(100.0, conf):.1f}%;"></div>
         </div>
         <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6); margin-top: 0.35rem;">
-            Host Crop: <strong style="color: #ffffff;">{info.get("crop", "Solanum")}</strong> · Model Input: 128×128 RGB
+            Crop: <strong style="color: #ffffff;">{info["crop"]}{f" ({pred_data['crop_confidence']:.1f}% confidence)" if pred_data["crop_confidence"] is not None else " (manual selection)"}</strong> · Model Input: 128×128 RGB
         </div>
         """, unsafe_allow_html=True)
         
@@ -754,7 +817,7 @@ with col_c3:
         <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.8px; color: rgba(255,255,255,0.5);">Pathogen Agent</div>
         <div style="font-size: 0.92rem; font-weight: 600; color: #ffffff; margin-bottom: 0.6rem;">{info.get("pathogen", "N/A")}</div>
         <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.8px; color: rgba(255,255,255,0.5);">Agronomic Prescription</div>
-        <div style="font-size: 0.82rem; line-height: 1.45; color: rgba(255,255,255,0.88);">{info.get("recommendation", "N/A")}</div>
+        <div style="font-size: 0.82rem; line-height: 1.45; color: rgba(255,255,255,0.88);">{info["recommendation"]}</div>
         """, unsafe_allow_html=True)
 
     st.markdown("""
