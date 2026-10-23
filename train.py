@@ -144,7 +144,7 @@ def resolve_dataset_paths(user_path=None):
         print(f"[!] kagglehub automatic lookup failed: {e}")
         return None, None
 
-def build_model(num_classes, img_size=(256, 256)):
+def build_model(num_classes, img_size=(128, 128)):
     """
     Builds a robust, lightweight Convolutional Neural Network with:
     - Data Augmentation layers to prevent overfitting
@@ -185,13 +185,14 @@ def build_model(num_classes, img_size=(256, 256)):
     model = models.Model(inputs=inputs, outputs=outputs, name="IPDDS_Potato_Tomato_CNN")
     return model
 
-def train(dataset_dir=None, epochs=10, batch_size=32, img_size=(256, 256)):
+def train(dataset_dir=None, epochs=10, batch_size=32, img_size=(128, 128)):
     train_path, val_path = resolve_dataset_paths(dataset_dir)
     print("=" * 60)
     print("IPDDS - Potato & Tomato Leaf Disease Model Training")
     print("=" * 60)
     print(f"Train Dataset Path : {train_path}")
     print(f"Val Dataset Path   : {val_path}")
+    print(f"Image Resolution   : {img_size}")
     
     if not train_path or not os.path.exists(train_path):
         print(f"[Error] Training directory not found: {train_path}")
@@ -280,12 +281,14 @@ def train(dataset_dir=None, epochs=10, batch_size=32, img_size=(256, 256)):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Potato & Tomato Plant Disease Detector")
     parser.add_argument("--dataset-path", type=str, default=None, help="Custom path to PlantVillage dataset root or train folder")
-    parser.add_argument("--epochs", type=int, default=10, help="Number of training epochs")
+    parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size for training")
+    parser.add_argument("--img-size", type=int, default=128, help="Square image resolution (e.g. 128 for fast CPU training)")
     args = parser.parse_args()
     
     train(
         dataset_dir=args.dataset_path,
         epochs=args.epochs,
-        batch_size=args.batch_size
+        batch_size=args.batch_size,
+        img_size=(args.img_size, args.img_size)
     )

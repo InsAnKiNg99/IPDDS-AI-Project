@@ -187,12 +187,13 @@ def load_metadata():
         try:
             with open(json_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                return data.get("class_names", DEFAULT_CLASSES), data.get("classes", DEFAULT_METADATA)
+                img_size = tuple(data.get("image_size", [128, 128]))
+                return data.get("class_names", DEFAULT_CLASSES), data.get("classes", DEFAULT_METADATA), img_size
         except Exception:
             pass
-    return DEFAULT_CLASSES, DEFAULT_METADATA
+    return DEFAULT_CLASSES, DEFAULT_METADATA, (128, 128)
 
-class_names, metadata_map = load_metadata()
+class_names, metadata_map, target_img_size = load_metadata()
 model, loaded_path = load_trained_model()
 
 # 4. Sidebar Controls & Info
@@ -248,7 +249,7 @@ with col_result:
     else:
         with st.spinner("Analyzing leaf pathology..."):
             # Preprocess
-            img_resized = image.resize((256, 256))
+            img_resized = image.resize(target_img_size)
             img_array = np.array(img_resized, dtype=np.float32)
             img_array = np.expand_dims(img_array, axis=0)
             
