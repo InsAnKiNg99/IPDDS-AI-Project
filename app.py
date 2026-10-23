@@ -6,9 +6,9 @@ import tensorflow as tf
 from PIL import Image
 import numpy as np
 
-# 1. Page Configuration (Strict Single-Page No-Scroll Layout)
+# 1. Page Configuration
 st.set_page_config(
-    page_title="IPDDS | Plant Pathology Evolved",
+    page_title="IPDDS | Plant Disease Detection System",
     page_icon="🌿",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -18,7 +18,7 @@ st.set_page_config(
 BG_IMAGE_BASE = "https://images.higgs.ai/?default=1&output=webp&url=https%3A%2F%2Fd8j0ntlcm91z4.cloudfront.net%2Fuser_38xzZboKViGWJOttwIXH07lWA1P%2Fhf_20260609_201152_bba90a12-bf12-459f-91f0-51f237dbaf3b.png&w=1920&q=85"
 BG_IMAGE_DISEASED = "https://images.higgs.ai/?default=1&output=webp&url=https%3A%2F%2Fd8j0ntlcm91z4.cloudfront.net%2Fuser_38xzZboKViGWJOttwIXH07lWA1P%2Fhf_20260609_195923_b0ba8ace-1d1d-4f2c-9a28-1ab84b330680.png&w=1920&q=85"
 
-# 2. Inject Cursor Spotlight Reveal Engine into Parent Window (60 FPS LERP)
+# 2. Inject Cursor Spotlight Reveal Engine (Seamless 60 FPS LERP, No Red Ring)
 components.html(f"""
 <script>
 (function() {{
@@ -41,7 +41,6 @@ components.html(f"""
     baseLayer.style.backgroundRepeat = 'no-repeat';
     baseLayer.style.zIndex = '-999';
     baseLayer.style.pointerEvents = 'none';
-    baseLayer.className = 'hero-zoom';
     doc.body.prepend(baseLayer);
     
     // 2. Reveal Layer (Diseased / blight infected rock revealed under cursor)
@@ -59,47 +58,14 @@ components.html(f"""
     revealLayer.style.webkitMaskRepeat = 'no-repeat';
     doc.body.prepend(revealLayer);
 
-    // 3. Spotlight Reticle Ring
-    const ring = doc.createElement('div');
-    ring.id = 'ipdds-spotlight-ring';
-    ring.style.position = 'fixed';
-    ring.style.top = '0';
-    ring.style.left = '0';
-    ring.style.width = '500px';
-    ring.style.height = '500px';
-    ring.style.borderRadius = '50%';
-    ring.style.border = '1px dashed rgba(239, 68, 68, 0.45)';
-    ring.style.boxShadow = '0 0 35px rgba(239, 68, 68, 0.18), inset 0 0 25px rgba(239, 68, 68, 0.12)';
-    ring.style.zIndex = '-997';
-    ring.style.pointerEvents = 'none';
-    ring.style.transition = 'opacity 0.25s ease';
-    ring.style.opacity = '0';
-    
-    // Scanner Label inside Reticle
-    const badge = doc.createElement('div');
-    badge.innerText = 'PATHOLOGY SCANNER // BLIGHT REVEAL';
-    badge.style.position = 'absolute';
-    badge.style.bottom = '14px';
-    badge.style.left = '50%';
-    badge.style.transform = 'translateX(-50%)';
-    badge.style.fontSize = '8.5px';
-    badge.style.letterSpacing = '1.8px';
-    badge.style.color = 'rgba(254, 202, 202, 0.9)';
-    badge.style.fontFamily = 'monospace';
-    badge.style.whiteSpace = 'nowrap';
-    ring.appendChild(badge);
-    
-    doc.body.prepend(ring);
-
-    // 4. Smooth Cursor Tracking with LERP (60 FPS)
+    // 3. Smooth Cursor Tracking with LERP (60 FPS, No Red Ring)
     let mouse = {{ x: -999, y: -999 }};
     let smooth = {{ x: -999, y: -999 }};
-    const SPOTLIGHT_R = 250;
+    const SPOTLIGHT_R = 260;
 
     function onMouseMove(e) {{
         mouse.x = e.clientX;
         mouse.y = e.clientY;
-        if (ring) ring.style.opacity = '1';
     }}
 
     doc.removeEventListener('mousemove', doc._ipddsMouseMove);
@@ -111,13 +77,9 @@ components.html(f"""
         smooth.y += (mouse.y - smooth.y) * 0.12;
         
         if (revealLayer && smooth.x > -500) {{
-            const maskVal = `radial-gradient(circle ${{SPOTLIGHT_R}}px at ${{smooth.x}}px ${{smooth.y}}px, black 0%, black 38%, rgba(0,0,0,0.75) 58%, rgba(0,0,0,0.35) 76%, rgba(0,0,0,0.08) 90%, transparent 100%)`;
+            const maskVal = `radial-gradient(circle ${{SPOTLIGHT_R}}px at ${{smooth.x}}px ${{smooth.y}}px, black 0%, black 35%, rgba(0,0,0,0.7) 55%, rgba(0,0,0,0.3) 75%, transparent 100%)`;
             revealLayer.style.maskImage = maskVal;
             revealLayer.style.webkitMaskImage = maskVal;
-        }}
-        
-        if (ring && smooth.x > -500) {{
-            ring.style.transform = `translate3d(${{smooth.x - 250}}px, ${{smooth.y - 250}}px, 0)`;
         }}
         
         requestAnimationFrame(loop);
@@ -131,60 +93,45 @@ components.html(f"""
 </script>
 """, height=0, width=0)
 
-# 3. Typography & Strict Single-Screen Zero-Scroll CSS System
+# 3. Typography & Responsive Layout CSS System (Clean, Scrollable When Needed)
 st.markdown("""
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@1,400;1,500;1,600&display=swap" rel="stylesheet">
 
 <style>
-    /* Strict Zero-Scroll Single Viewport (Never Scrolls) */
+    /* Clean Viewport Reset (Allows Smooth Scroll When Screen is Small) */
     *, *::before, *::after {
         box-sizing: border-box !important;
-        scrollbar-width: none !important;
-        -ms-overflow-style: none !important;
-    }
-    
-    *::-webkit-scrollbar {
-        display: none !important;
-        width: 0 !important;
-        height: 0 !important;
     }
     
     html, body {
-        height: 100vh !important;
-        max-height: 100vh !important;
-        overflow: hidden !important;
-        overflow-y: hidden !important;
-        background-color: #000000 !important;
         margin: 0 !important;
         padding: 0 !important;
-        position: fixed !important;
-        width: 100vw !important;
+        min-height: 100vh !important;
+        background-color: #030708 !important;
+        color: #ffffff !important;
+        font-family: 'Inter', sans-serif !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
     }
     
     .stApp {
-        height: 100vh !important;
-        max-height: 100vh !important;
-        overflow: hidden !important;
-        overflow-y: hidden !important;
         background: transparent !important;
         background-color: transparent !important;
         color: #ffffff !important;
-        font-family: 'Inter', sans-serif !important;
+        min-height: 100vh !important;
     }
     
     [data-testid="stAppViewContainer"], 
     [data-testid="stHeader"], 
-    section.main, 
-    .block-container {
+    section.main {
         background: transparent !important;
         background-color: transparent !important;
-        overflow: hidden !important;
-        overflow-y: hidden !important;
+        overflow-x: hidden !important;
     }
 
-    /* Hide Streamlit Default UI Chrome */
+    /* Hide Streamlit UI Chrome */
     #MainMenu, footer, header, .stDeployButton, [data-testid="stToolbar"] {
         display: none !important;
         visibility: hidden !important;
@@ -200,16 +147,11 @@ st.markdown("""
         border: none !important;
     }
     
-    /* Main Layout Viewport Constraint */
+    /* Centered Main Block Container with Balanced Margins */
     .main .block-container {
-        max-width: 1400px !important;
-        padding: 0.8rem 2rem 0.8rem 2rem !important;
+        max-width: 1300px !important;
+        padding: 1.25rem 2rem 2.5rem 2rem !important;
         margin: 0 auto !important;
-        height: 100vh !important;
-        max-height: 100vh !important;
-        display: flex !important;
-        flex-direction: column !important;
-        justify-content: space-between !important;
     }
 
     /* Typography Classes */
@@ -221,73 +163,43 @@ st.markdown("""
         font-family: 'Inter', sans-serif !important;
     }
 
-    /* Entrance Animations */
-    @keyframes heroReveal {
-        from { opacity: 0; transform: translateY(22px) scale(0.98); filter: blur(6px); }
-        to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
-    }
-    @keyframes heroFadeUp {
-        from { opacity: 0; transform: translateY(16px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes heroZoom {
-        from { transform: scale(1.06); }
-        to { transform: scale(1); }
-    }
-    .hero-anim {
-        animation-fill-mode: forwards;
-        animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
-    }
-    .hero-reveal {
-        animation-name: heroReveal;
-        animation-duration: 1.1s;
-    }
-    .hero-fade {
-        animation-name: heroFadeUp;
-        animation-duration: 0.9s;
-    }
-    .hero-zoom {
-        animation: heroZoom 2.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-    }
-
     /* Top Floating Navigation Bar */
     .top-nav {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 0.35rem 1.25rem;
-        background: rgba(14, 16, 22, 0.55);
+        padding: 0.5rem 1.4rem;
+        background: rgba(14, 18, 26, 0.65);
         backdrop-filter: blur(25px);
         -webkit-backdrop-filter: blur(25px);
         border: 1px solid rgba(255, 255, 255, 0.16);
         border-radius: 9999px;
         box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.2), 0 10px 30px rgba(0,0,0,0.6);
-        z-index: 50;
-        margin-bottom: 0.2rem;
+        margin-bottom: 1.25rem;
     }
     
     .nav-brand {
         display: flex;
         align-items: center;
-        gap: 0.65rem;
+        gap: 0.7rem;
     }
     
     .nav-logo-icon {
-        width: 30px;
-        height: 30px;
+        width: 32px;
+        height: 32px;
         border-radius: 9999px;
         background: rgba(255, 255, 255, 0.12);
         border: 1px solid rgba(255, 255, 255, 0.25);
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 0.85rem;
-        font-weight: 600;
+        font-size: 0.9rem;
+        font-weight: 700;
         color: #ffffff;
     }
     
     .nav-wordmark {
-        font-size: 1.25rem;
+        font-size: 1.35rem;
         color: #ffffff;
         letter-spacing: -0.3px;
     }
@@ -295,8 +207,8 @@ st.markdown("""
     .nav-center-pill {
         display: flex;
         align-items: center;
-        gap: 0.75rem;
-        font-size: 0.78rem;
+        gap: 0.85rem;
+        font-size: 0.82rem;
         font-weight: 500;
         color: rgba(255, 255, 255, 0.82);
     }
@@ -305,85 +217,78 @@ st.markdown("""
         background: #ffffff;
         color: #000000;
         border-radius: 9999px;
-        padding: 0.3rem 0.95rem;
-        font-size: 0.75rem;
+        padding: 0.35rem 1rem;
+        font-size: 0.78rem;
         font-weight: 600;
         display: flex;
         align-items: center;
-        gap: 0.35rem;
+        gap: 0.4rem;
         white-space: nowrap;
     }
 
-    /* Hero Heading Section (Compact, Non-Intrusive) */
+    /* Hero Heading Section (Clean Project Typography) */
     .hero-container {
-        margin-top: 0.1rem;
-        margin-bottom: 0.4rem;
-        pointer-events: none;
+        margin-bottom: 1.5rem;
+        text-align: left;
     }
     
     .hero-kicker {
-        font-size: 0.75rem;
-        font-weight: 500;
-        color: rgba(255, 255, 255, 0.75);
-        letter-spacing: 1px;
-        margin-bottom: 0.1rem;
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: #34d399;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        margin-bottom: 0.35rem;
     }
     
-    .hero-h1 {
-        line-height: 0.92;
-        margin: 0;
-        text-shadow: 0 4px 20px rgba(0, 0, 0, 0.85);
-    }
-    
-    .hero-line1 {
-        display: block;
-        font-size: 2.8rem;
+    .hero-title {
+        font-size: 2.75rem;
+        line-height: 1.05;
+        font-weight: 600;
         color: #ffffff;
-        letter-spacing: -1.5px;
+        letter-spacing: -1.2px;
+        margin: 0 0 0.5rem 0;
+        text-shadow: 0 4px 20px rgba(0, 0, 0, 0.8);
     }
     
-    .hero-line2 {
-        display: block;
-        font-size: 2.8rem;
+    .hero-subtitle {
+        font-size: 0.95rem;
         font-weight: 300;
-        color: #ffffff;
-        letter-spacing: -1.8px;
-        margin-top: -0.15rem;
+        color: rgba(255, 255, 255, 0.78);
+        max-width: 760px;
+        line-height: 1.5;
+        margin: 0;
     }
 
     /* Interactive Bottom Three Liquid-Glass Cards */
     div[data-testid="stHorizontalBlock"] {
-        margin-top: auto !important;
-        margin-bottom: 0.2rem !important;
-        gap: 1.2rem !important;
+        gap: 1.25rem !important;
+        align-items: stretch !important;
     }
 
     div[data-testid="stColumn"], 
     div[data-testid="column"], 
     .stColumn {
-        background: rgba(14, 16, 22, 0.72) !important;
+        background: rgba(12, 16, 24, 0.76) !important;
         backdrop-filter: blur(40px) saturate(180%) !important;
         -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
-        border: 1px solid rgba(255, 255, 255, 0.18) !important;
-        box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), 0 25px 50px rgba(0, 0, 0, 0.8) !important;
+        border: 1px solid rgba(255, 255, 255, 0.16) !important;
+        box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.2), 0 20px 45px rgba(0, 0, 0, 0.75) !important;
         border-radius: 1.25rem !important;
-        padding: 1rem 1.15rem !important;
-        height: 310px !important;
-        max-height: 310px !important;
-        min-height: 310px !important;
+        padding: 1.35rem !important;
+        min-height: 420px !important;
         display: flex !important;
         flex-direction: column !important;
         justify-content: space-between !important;
         transition: transform 0.25s ease, border-color 0.25s ease !important;
-        overflow: hidden !important;
     }
     
     div[data-testid="stColumn"]:hover, 
     div[data-testid="column"]:hover, 
     .stColumn:hover {
         transform: translateY(-2px);
-        border-color: rgba(255, 255, 255, 0.45) !important;
-        box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.35), 0 30px 60px rgba(0, 0, 0, 0.9) !important;
+        border-color: rgba(255, 255, 255, 0.38) !important;
+        box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.3), 0 25px 55px rgba(0, 0, 0, 0.85) !important;
     }
 
     div[data-testid="stColumn"] > div, 
@@ -392,22 +297,22 @@ st.markdown("""
         display: flex !important;
         flex-direction: column !important;
         justify-content: space-between !important;
-        gap: 0.35rem !important;
+        gap: 0.65rem !important;
     }
 
     .card-top-row {
         display: flex;
-        align-items: flex-start;
+        align-items: center;
         justify-content: space-between;
-        margin-bottom: 0.3rem;
+        margin-bottom: 0.5rem;
     }
     
     .card-icon-square {
-        width: 34px;
-        height: 34px;
-        border-radius: 0.65rem;
+        width: 36px;
+        height: 36px;
+        border-radius: 0.7rem;
         background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.18);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -418,73 +323,66 @@ st.markdown("""
         display: flex;
         flex-wrap: wrap;
         justify-content: flex-end;
-        gap: 0.25rem;
-        max-width: 75%;
+        gap: 0.3rem;
+        max-width: 80%;
     }
     
     .pill-tag {
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid rgba(255, 255, 255, 0.16);
         border-radius: 9999px;
-        padding: 0.1rem 0.45rem;
-        font-size: 0.64rem;
+        padding: 0.15rem 0.55rem;
+        font-size: 0.68rem;
         color: rgba(255, 255, 255, 0.85);
         white-space: nowrap;
     }
 
     /* Card Bottom Titles */
     .card-title {
-        font-size: 1.55rem;
-        line-height: 0.95;
-        letter-spacing: -0.6px;
+        font-size: 1.45rem;
+        line-height: 1.1;
+        letter-spacing: -0.5px;
         color: #ffffff;
-        margin: 0.4rem 0 0.15rem 0;
+        margin: 0.6rem 0 0.2rem 0;
     }
     
     .card-desc {
-        font-size: 0.72rem;
-        line-height: 1.3;
-        color: rgba(255, 255, 255, 0.8);
+        font-size: 0.78rem;
+        line-height: 1.4;
+        color: rgba(255, 255, 255, 0.75);
         font-weight: 300;
         margin: 0;
     }
 
-    /* File Uploader Compact Pill Override */
+    /* File Uploader Clean Liquid Style */
     [data-testid="stFileUploader"] {
-        margin-bottom: 0.2rem !important;
+        margin-bottom: 0.5rem !important;
     }
     [data-testid="stFileUploader"] section {
         background: rgba(255, 255, 255, 0.04) !important;
-        border: 1px dashed rgba(255, 255, 255, 0.2) !important;
-        border-radius: 10px !important;
-        padding: 0.25rem 0.5rem !important;
-        min-height: unset !important;
-    }
-    [data-testid="stFileUploader"] small {
-        display: none !important;
-    }
-    [data-testid="stFileUploader"] span {
-        font-size: 0.7rem !important;
+        border: 1px dashed rgba(255, 255, 255, 0.25) !important;
+        border-radius: 12px !important;
+        padding: 0.6rem 0.8rem !important;
     }
     [data-testid="stFileUploader"] button {
         background: #ffffff !important;
         color: #000000 !important;
         border-radius: 9999px !important;
         font-weight: 600 !important;
-        font-size: 0.68rem !important;
-        padding: 0.15rem 0.65rem !important;
+        font-size: 0.75rem !important;
+        padding: 0.25rem 0.85rem !important;
         border: none !important;
     }
 
     /* Button Pill Overrides */
     .stButton > button {
-        background: rgba(255, 255, 255, 0.07) !important;
+        background: rgba(255, 255, 255, 0.08) !important;
         color: #ffffff !important;
-        border: 1px solid rgba(255, 255, 255, 0.18) !important;
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
         border-radius: 9999px !important;
-        padding: 0.22rem 0.5rem !important;
+        padding: 0.35rem 0.6rem !important;
         font-family: 'Inter', sans-serif !important;
-        font-size: 0.68rem !important;
+        font-size: 0.75rem !important;
         font-weight: 500 !important;
         backdrop-filter: blur(10px) !important;
         transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
@@ -494,48 +392,59 @@ st.markdown("""
     }
     
     .stButton > button:hover {
-        background: rgba(255, 255, 255, 0.22) !important;
-        border-color: rgba(255, 255, 255, 0.55) !important;
+        background: rgba(255, 255, 255, 0.24) !important;
+        border-color: rgba(255, 255, 255, 0.6) !important;
         color: #ffffff !important;
         transform: translateY(-1px) !important;
     }
 
     /* Diagnostic Badges */
     .badge-healthy {
-        background: rgba(16, 185, 129, 0.2);
-        border: 1px solid rgba(16, 185, 129, 0.5);
+        background: rgba(16, 185, 129, 0.22);
+        border: 1px solid rgba(16, 185, 129, 0.55);
         color: #6ee7b7;
-        padding: 0.12rem 0.55rem;
+        padding: 0.2rem 0.7rem;
         border-radius: 9999px;
-        font-size: 0.66rem;
+        font-size: 0.74rem;
         font-weight: 600;
         display: inline-block;
     }
     
     .badge-diseased {
-        background: rgba(239, 68, 68, 0.2);
-        border: 1px solid rgba(239, 68, 68, 0.5);
+        background: rgba(239, 68, 68, 0.22);
+        border: 1px solid rgba(239, 68, 68, 0.55);
         color: #fca5a5;
-        padding: 0.12rem 0.55rem;
+        padding: 0.2rem 0.7rem;
         border-radius: 9999px;
-        font-size: 0.66rem;
+        font-size: 0.74rem;
         font-weight: 600;
         display: inline-block;
     }
     
     .conf-bar-track {
         width: 100%;
-        height: 4px;
-        background: rgba(255, 255, 255, 0.1);
+        height: 6px;
+        background: rgba(255, 255, 255, 0.12);
         border-radius: 9999px;
         overflow: hidden;
-        margin: 0.3rem 0 0.4rem 0;
+        margin: 0.4rem 0 0.6rem 0;
     }
     
     .conf-bar-fill {
         height: 100%;
         background: linear-gradient(90deg, #10b981 0%, #34d399 100%);
         border-radius: 9999px;
+    }
+
+    .leaf-preview-box {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 10px;
+        padding: 0.45rem 0.65rem;
+        margin-top: 0.4rem;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -591,17 +500,15 @@ model, loaded_path = load_trained_model()
 st.markdown("""
 <div class="top-nav">
     <div class="nav-brand">
-        <div class="nav-logo-icon font-playfair">ip</div>
+        <div class="nav-logo-icon font-playfair">IP</div>
         <span class="nav-wordmark font-playfair italic">IPDDS</span>
     </div>
     <div class="nav-center-pill">
-        <span>Neural Pathology</span>
-        <span style="opacity: 0.3;">·</span>
-        <span>Tomato & Potato</span>
+        <span>Tomato & Potato Crops</span>
         <span style="opacity: 0.3;">·</span>
         <span>13 Disease Classes</span>
         <span style="opacity: 0.3;">·</span>
-        <span>Real-Time Inference</span>
+        <span>Neural Inference</span>
     </div>
     <div class="cta-pill-white">
         <span>Active Model · 92% Acc</span>
@@ -610,29 +517,34 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# 6. Hero Heading Section (Staggered Blur-Rise Entrance)
+# 6. Hero Heading Section (Clear, Project-Specific Text)
 st.markdown("""
 <div class="hero-container">
-    <div class="hero-kicker hero-anim hero-fade" style="animation-delay: 0.15s;">// AI LEAF PATHOLOGY REVEAL ENGINE</div>
-    <h1 class="hero-h1">
-        <span class="hero-line1 font-playfair italic hero-anim hero-reveal" style="animation-delay: 0.25s;">Layers hold</span>
-        <span class="hero-line2 font-inter hero-anim hero-reveal" style="animation-delay: 0.42s;">tales of plant health</span>
+    <div class="hero-kicker">Intelligent Plant Disease Detection System</div>
+    <h1 class="hero-title">
+        <span class="font-playfair italic">AI Pathology</span> for Potato & Tomato Crops
     </h1>
+    <p class="hero-subtitle">
+        Neural foliar scanner detecting early blight, late blight, bacterial lesions, and viral infections in real-time with tailored agronomic treatment protocols.
+    </p>
 </div>
 """, unsafe_allow_html=True)
 
-# 7. Interactive Three Liquid-Glass Cards Grid
-col_c1, col_c2, col_c3 = st.columns([1, 1, 1], gap="small")
-
+# Session state initialization
 if "selected_sample" not in st.session_state:
     st.session_state.selected_sample = None
+if "selected_label" not in st.session_state:
+    st.session_state.selected_label = None
+
+# 7. Interactive Three Liquid-Glass Cards Grid
+col_c1, col_c2, col_c3 = st.columns([1, 1, 1], gap="medium")
 
 # Card 1: Leaf Specimen Input
 with col_c1:
     st.markdown("""
     <div class="card-top-row">
         <div class="card-icon-square">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
         </div>
         <div class="tags-cloud">
             <span class="pill-tag">Tomato</span>
@@ -643,35 +555,59 @@ with col_c1:
     </div>
     """, unsafe_allow_html=True)
     
-    uploaded_file = st.file_uploader("Upload Leaf", type=["jpg", "jpeg", "png"], label_visibility="collapsed")
+    st.markdown("<div style='font-size: 0.85rem; font-weight: 500; margin-bottom: 0.3rem;'>Upload Leaf Image</div>", unsafe_allow_html=True)
+    uploaded_file = st.file_uploader(
+        "Upload Leaf Image", 
+        type=["jpg", "jpeg", "png"], 
+        label_visibility="collapsed",
+        key="leaf_uploader"
+    )
     
+    st.markdown("<div style='font-size: 0.85rem; font-weight: 500; margin: 0.6rem 0 0.35rem 0;'>Or Select Benchmark Leaf</div>", unsafe_allow_html=True)
     b_col1, b_col2 = st.columns(2)
     with b_col1:
         if st.button("🍅 Tomato Blight", key="btn_tb"):
             st.session_state.selected_sample = os.path.join("samples", "sample_tomato_early_blight.jpg")
+            st.session_state.selected_label = "Tomato Early Blight (Demo)"
         if st.button("🥔 Potato Blight", key="btn_pb"):
             st.session_state.selected_sample = os.path.join("samples", "sample_potato_late_blight.jpg")
+            st.session_state.selected_label = "Potato Late Blight (Demo)"
     with b_col2:
         if st.button("🥔 Potato Early", key="btn_pe"):
             st.session_state.selected_sample = os.path.join("samples", "sample_potato_early_blight.jpg")
+            st.session_state.selected_label = "Potato Early Blight (Demo)"
         if st.button("🌿 Healthy Leaf", key="btn_th"):
             st.session_state.selected_sample = os.path.join("samples", "sample_tomato_healthy.jpg")
+            st.session_state.selected_label = "Tomato Healthy Leaf (Demo)"
+
+    # Resolve active image
+    eval_image = None
+    source_name = None
+    if uploaded_file is not None:
+        eval_image = Image.open(uploaded_file).convert("RGB")
+        source_name = uploaded_file.name
+    elif st.session_state.selected_sample and os.path.exists(st.session_state.selected_sample):
+        eval_image = Image.open(st.session_state.selected_sample).convert("RGB")
+        source_name = st.session_state.selected_label or os.path.basename(st.session_state.selected_sample)
+
+    if eval_image is not None:
+        st.markdown(f"""
+        <div class="leaf-preview-box">
+            <span style="font-size: 1.1rem;">📷</span>
+            <div style="font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                <span style="font-weight: 600; color: #34d399;">Active Leaf:</span> {source_name}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
     st.markdown("""
     <div style="margin-top: auto;">
-        <h3 class="card-title font-playfair italic">Leaf Inspection</h3>
-        <p class="card-desc">Select a botanical sample or upload leaf to analyze pathology.</p>
+        <h3 class="card-title font-playfair italic">Specimen Ingestion</h3>
+        <p class="card-desc">Upload a high-resolution field leaf photograph or click a demo sample to evaluate.</p>
     </div>
     """, unsafe_allow_html=True)
 
-# Active Image Resolution & Prediction
-eval_image = None
-if uploaded_file is not None:
-    eval_image = Image.open(uploaded_file).convert("RGB")
-    st.session_state.selected_sample = None
-elif st.session_state.selected_sample and os.path.exists(st.session_state.selected_sample):
-    eval_image = Image.open(st.session_state.selected_sample).convert("RGB")
-
+# Run Inference if Image is available
 pred_data = None
 if eval_image is not None and model is not None:
     img_resized = eval_image.resize(target_img_size)
@@ -702,11 +638,11 @@ with col_c2:
     st.markdown("""
     <div class="card-top-row">
         <div class="card-icon-square">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/></svg>
         </div>
         <div class="tags-cloud">
             <span class="pill-tag">92% Acc</span>
-            <span class="pill-tag">&lt;200ms</span>
+            <span class="pill-tag">&lt;150ms</span>
             <span class="pill-tag">Real-Time</span>
             <span class="pill-tag">CNN</span>
         </div>
@@ -715,10 +651,12 @@ with col_c2:
     
     if pred_data is None:
         st.markdown("""
-        <div style="text-align: center; padding: 1.2rem 0; opacity: 0.65;">
-            <div style="font-size: 1.8rem; margin-bottom: 0.25rem;">🍃</div>
-            <div style="font-size: 0.82rem; font-weight: 500;">Awaiting Leaf Input</div>
-            <div style="font-size: 0.7rem; color: rgba(255,255,255,0.6); margin-top: 0.15rem;">Select a sample or upload on the left.</div>
+        <div style="text-align: center; padding: 2.5rem 0.5rem; opacity: 0.7;">
+            <div style="font-size: 2.2rem; margin-bottom: 0.4rem;">🍃</div>
+            <div style="font-size: 0.95rem; font-weight: 500;">Awaiting Leaf Input</div>
+            <div style="font-size: 0.78rem; color: rgba(255,255,255,0.65); margin-top: 0.2rem;">
+                Upload a photo or choose a benchmark sample on the left to run inference.
+            </div>
         </div>
         """, unsafe_allow_html=True)
     else:
@@ -726,26 +664,29 @@ with col_c2:
         conf = pred_data["confidence"]
         status = info.get("status", "Unknown")
         badge_cls = "badge-healthy" if status == "Healthy" else "badge-diseased"
-        badge_text = "🟢 Healthy Leaf" if status == "Healthy" else f"🔴 {status}"
+        badge_text = "🟢 Healthy Crop" if status == "Healthy" else "🔴 Pathogen Detected"
         
         st.markdown(f"""
-        <div style="margin-bottom: 0.25rem;"><span class="{badge_cls}">{badge_text}</span></div>
-        <div style="font-size: 1.15rem; font-weight: 600; color: #ffffff; line-height: 1.15;">
+        <div style="margin-bottom: 0.5rem;"><span class="{badge_cls}">{badge_text}</span></div>
+        <div style="font-size: 1.35rem; font-weight: 600; color: #ffffff; line-height: 1.2;">
             {info.get("display_name", pred_data["raw_class"])}
         </div>
-        <div style="display: flex; justify-content: space-between; font-size: 0.72rem; margin-top: 0.4rem;">
-            <span style="color: rgba(255,255,255,0.6);">Confidence Score</span>
-            <span style="font-weight: 600; color: #6ee7b7;">{conf:.1f}%</span>
+        <div style="display: flex; justify-content: space-between; font-size: 0.78rem; margin-top: 0.75rem;">
+            <span style="color: rgba(255,255,255,0.65);">Confidence Score</span>
+            <span style="font-weight: 600; color: #34d399;">{conf:.1f}%</span>
         </div>
         <div class="conf-bar-track">
             <div class="conf-bar-fill" style="width: {min(100.0, conf):.1f}%;"></div>
+        </div>
+        <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6); margin-top: 0.35rem;">
+            Host Crop: <strong style="color: #ffffff;">{info.get("crop", "Solanum")}</strong> · Model Input: 128×128 RGB
         </div>
         """, unsafe_allow_html=True)
         
     st.markdown("""
     <div style="margin-top: auto;">
         <h3 class="card-title font-playfair italic">Neural Diagnosis</h3>
-        <p class="card-desc">Convolutional network scans cellular patterns to identify pathogen strains.</p>
+        <p class="card-desc">Deep convolutional network evaluates lesion morphology and foliar patterns.</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -754,7 +695,7 @@ with col_c3:
     st.markdown("""
     <div class="card-top-row">
         <div class="card-icon-square">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
         </div>
         <div class="tags-cloud">
             <span class="pill-tag">Pathogen</span>
@@ -767,24 +708,26 @@ with col_c3:
     
     if pred_data is None:
         st.markdown("""
-        <div style="text-align: center; padding: 1.2rem 0; opacity: 0.65;">
-            <div style="font-size: 1.8rem; margin-bottom: 0.25rem;">🧪</div>
-            <div style="font-size: 0.82rem; font-weight: 500;">Clinical Guide Standby</div>
-            <div style="font-size: 0.7rem; color: rgba(255,255,255,0.6); margin-top: 0.15rem;">Treatment protocols populate after diagnosis.</div>
+        <div style="text-align: center; padding: 2.5rem 0.5rem; opacity: 0.7;">
+            <div style="font-size: 2.2rem; margin-bottom: 0.4rem;">🧪</div>
+            <div style="font-size: 0.95rem; font-weight: 500;">Clinical Guide Standby</div>
+            <div style="font-size: 0.78rem; color: rgba(255,255,255,0.65); margin-top: 0.2rem;">
+                Pathogen profile and agronomic remedies will appear upon disease diagnosis.
+            </div>
         </div>
         """, unsafe_allow_html=True)
     else:
         info = pred_data["info"]
         st.markdown(f"""
-        <div style="font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.8px; color: rgba(255,255,255,0.5);">Pathogen Agent</div>
-        <div style="font-size: 0.8rem; font-weight: 500; color: #ffffff; margin-bottom: 0.35rem;">{info.get("pathogen", "N/A")}</div>
-        <div style="font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.8px; color: rgba(255,255,255,0.5);">Agronomic Treatment</div>
-        <div style="font-size: 0.73rem; line-height: 1.3; color: rgba(255,255,255,0.85);">{info.get("recommendation", "N/A")}</div>
+        <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.8px; color: rgba(255,255,255,0.5);">Pathogen Agent</div>
+        <div style="font-size: 0.92rem; font-weight: 600; color: #ffffff; margin-bottom: 0.6rem;">{info.get("pathogen", "N/A")}</div>
+        <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.8px; color: rgba(255,255,255,0.5);">Agronomic Prescription</div>
+        <div style="font-size: 0.82rem; line-height: 1.45; color: rgba(255,255,255,0.88);">{info.get("recommendation", "N/A")}</div>
         """, unsafe_allow_html=True)
 
     st.markdown("""
     <div style="margin-top: auto;">
         <h3 class="card-title font-playfair italic">Treatment Protocol</h3>
-        <p class="card-desc">Targeted bio-fungicides and cultural practices to halt disease spread.</p>
+        <p class="card-desc">Targeted bio-fungicides, copper sprays, and cultural practices to halt disease spread.</p>
     </div>
     """, unsafe_allow_html=True)
