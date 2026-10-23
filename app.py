@@ -1,5 +1,6 @@
 import os
 import json
+import base64
 import streamlit as st
 import streamlit.components.v1 as components
 import tensorflow as tf
@@ -14,54 +15,80 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Botanical Asset URLs (Lush Flowering Rock Base + Diseased Rock Reveal)
-BG_IMAGE_BASE = "https://images.higgs.ai/?default=1&output=webp&url=https%3A%2F%2Fd8j0ntlcm91z4.cloudfront.net%2Fuser_38xzZboKViGWJOttwIXH07lWA1P%2Fhf_20260609_201152_bba90a12-bf12-459f-91f0-51f237dbaf3b.png&w=1920&q=85"
-BG_IMAGE_DISEASED = "https://images.higgs.ai/?default=1&output=webp&url=https%3A%2F%2Fd8j0ntlcm91z4.cloudfront.net%2Fuser_38xzZboKViGWJOttwIXH07lWA1P%2Fhf_20260609_195923_b0ba8ace-1d1d-4f2c-9a28-1ab84b330680.png&w=1920&q=85"
+# Helper to load images locally as base64 for instant, 100% offline-ready display
+def get_base64_data_uri(image_path, fallback_url):
+    if os.path.exists(image_path):
+        try:
+            with open(image_path, "rb") as f:
+                encoded = base64.b64encode(f.read()).decode("utf-8")
+                return f"data:image/webp;base64,{encoded}"
+        except Exception:
+            pass
+    return fallback_url
 
-# 2. Inject Cursor Spotlight Reveal Engine (Seamless 60 FPS LERP, No Red Ring)
+FALLBACK_BASE_URL = "https://images.higgs.ai/?default=1&output=webp&url=https%3A%2F%2Fd8j0ntlcm91z4.cloudfront.net%2Fuser_38xzZboKViGWJOttwIXH07lWA1P%2Fhf_20260609_201152_bba90a12-bf12-459f-91f0-51f237dbaf3b.png&w=1920&q=85"
+FALLBACK_DISEASED_URL = "https://images.higgs.ai/?default=1&output=webp&url=https%3A%2F%2Fd8j0ntlcm91z4.cloudfront.net%2Fuser_38xzZboKViGWJOttwIXH07lWA1P%2Fhf_20260609_195923_b0ba8ace-1d1d-4f2c-9a28-1ab84b330680.png&w=1920&q=85"
+
+# Local plant flowering rock (base) and decayed rock (reveal)
+BASE_IMG_URI = get_base64_data_uri(os.path.join("samples", "bg_image_2.webp"), FALLBACK_BASE_URL)
+DISEASED_IMG_URI = get_base64_data_uri(os.path.join("samples", "bg_image_1.webp"), FALLBACK_DISEASED_URL)
+
+# 2. Inject Cursor Spotlight Reveal Engine (Seamless 60 FPS LERP, NO Red Circle)
 components.html(f"""
 <script>
 (function() {{
     const doc = window.parent.document;
     
-    // Clean up any stale elements from previous renders
-    ['motion-bg-video', 'motion-vignette', 'ipdds-base-bg', 'ipdds-reveal-bg', 'ipdds-spotlight-ring'].forEach(id => {{
+    // Clean up any old red rings or stale elements
+    ['motion-bg-video', 'motion-vignette', 'ipdds-spotlight-ring'].forEach(id => {{
         const el = doc.getElementById(id);
         if (el) el.remove();
     }});
     
-    // 1. Base Layer (Lush healthy flowering botanical rock)
-    const baseLayer = doc.createElement('div');
-    baseLayer.id = 'ipdds-base-bg';
-    baseLayer.style.position = 'fixed';
-    baseLayer.style.inset = '0';
-    baseLayer.style.backgroundImage = 'url("{BG_IMAGE_BASE}")';
-    baseLayer.style.backgroundPosition = 'center';
-    baseLayer.style.backgroundSize = 'cover';
-    baseLayer.style.backgroundRepeat = 'no-repeat';
-    baseLayer.style.zIndex = '-999';
-    baseLayer.style.pointerEvents = 'none';
-    doc.body.prepend(baseLayer);
+    // 1. Base Layer (Lush healthy flowering botanical plant rock)
+    let baseLayer = doc.getElementById('ipdds-base-bg');
+    if (!baseLayer) {{
+        baseLayer = doc.createElement('div');
+        baseLayer.id = 'ipdds-base-bg';
+        baseLayer.style.position = 'fixed';
+        baseLayer.style.top = '0';
+        baseLayer.style.left = '0';
+        baseLayer.style.width = '100vw';
+        baseLayer.style.height = '100vh';
+        baseLayer.style.backgroundPosition = 'center';
+        baseLayer.style.backgroundSize = 'cover';
+        baseLayer.style.backgroundRepeat = 'no-repeat';
+        baseLayer.style.zIndex = '0';
+        baseLayer.style.pointerEvents = 'none';
+        doc.body.prepend(baseLayer);
+    }}
+    baseLayer.style.backgroundImage = 'url("{BASE_IMG_URI}")';
     
-    // 2. Reveal Layer (Diseased / blight infected rock revealed under cursor)
-    const revealLayer = doc.createElement('div');
-    revealLayer.id = 'ipdds-reveal-bg';
-    revealLayer.style.position = 'fixed';
-    revealLayer.style.inset = '0';
-    revealLayer.style.backgroundImage = 'url("{BG_IMAGE_DISEASED}")';
-    revealLayer.style.backgroundPosition = 'center';
-    revealLayer.style.backgroundSize = 'cover';
-    revealLayer.style.backgroundRepeat = 'no-repeat';
-    revealLayer.style.zIndex = '-998';
-    revealLayer.style.pointerEvents = 'none';
-    revealLayer.style.maskRepeat = 'no-repeat';
-    revealLayer.style.webkitMaskRepeat = 'no-repeat';
-    doc.body.prepend(revealLayer);
+    // 2. Reveal Layer (Diseased/blight rock revealed seamlessly under cursor)
+    let revealLayer = doc.getElementById('ipdds-reveal-bg');
+    if (!revealLayer) {{
+        revealLayer = doc.createElement('div');
+        revealLayer.id = 'ipdds-reveal-bg';
+        revealLayer.style.position = 'fixed';
+        revealLayer.style.top = '0';
+        revealLayer.style.left = '0';
+        revealLayer.style.width = '100vw';
+        revealLayer.style.height = '100vh';
+        revealLayer.style.backgroundPosition = 'center';
+        revealLayer.style.backgroundSize = 'cover';
+        revealLayer.style.backgroundRepeat = 'no-repeat';
+        revealLayer.style.zIndex = '1';
+        revealLayer.style.pointerEvents = 'none';
+        revealLayer.style.maskRepeat = 'no-repeat';
+        revealLayer.style.webkitMaskRepeat = 'no-repeat';
+        doc.body.prepend(revealLayer);
+    }}
+    revealLayer.style.backgroundImage = 'url("{DISEASED_IMG_URI}")';
 
-    // 3. Smooth Cursor Tracking with LERP (60 FPS, No Red Ring)
+    // 3. Smooth Cursor Tracking with LERP (Pure spotlight mask, NO red circle)
     let mouse = {{ x: -999, y: -999 }};
     let smooth = {{ x: -999, y: -999 }};
-    const SPOTLIGHT_R = 260;
+    const SPOTLIGHT_R = 270;
 
     function onMouseMove(e) {{
         mouse.x = e.clientX;
@@ -77,7 +104,7 @@ components.html(f"""
         smooth.y += (mouse.y - smooth.y) * 0.12;
         
         if (revealLayer && smooth.x > -500) {{
-            const maskVal = `radial-gradient(circle ${{SPOTLIGHT_R}}px at ${{smooth.x}}px ${{smooth.y}}px, black 0%, black 35%, rgba(0,0,0,0.7) 55%, rgba(0,0,0,0.3) 75%, transparent 100%)`;
+            const maskVal = `radial-gradient(circle ${{SPOTLIGHT_R}}px at ${{smooth.x}}px ${{smooth.y}}px, black 0%, black 35%, rgba(0,0,0,0.7) 55%, rgba(0,0,0,0.25) 75%, transparent 100%)`;
             revealLayer.style.maskImage = maskVal;
             revealLayer.style.webkitMaskImage = maskVal;
         }}
@@ -93,14 +120,14 @@ components.html(f"""
 </script>
 """, height=0, width=0)
 
-# 3. Typography & Responsive Layout CSS System (Clean, Scrollable When Needed)
+# 3. Typography & Responsive Layout CSS System (Clean, Never Clips, Interactive Rock)
 st.markdown("""
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@1,400;1,500;1,600&display=swap" rel="stylesheet">
 
 <style>
-    /* Clean Viewport Reset (Allows Smooth Scroll When Screen is Small) */
+    /* Clean Viewport Reset */
     *, *::before, *::after {
         box-sizing: border-box !important;
     }
@@ -116,10 +143,13 @@ st.markdown("""
         overflow-y: auto !important;
     }
     
+    /* App Layer Sits at z-index 10 (Transparent over the botanical rock at z-index 0/1) */
     .stApp {
         background: transparent !important;
         background-color: transparent !important;
         color: #ffffff !important;
+        position: relative !important;
+        z-index: 10 !important;
         min-height: 100vh !important;
     }
     
@@ -137,19 +167,21 @@ st.markdown("""
         visibility: hidden !important;
     }
 
-    /* Collapse Streamlit Iframe Wrappers */
+    /* Safe Iframe Handling: Off-screen instead of display:none so browser executes JavaScript */
     [data-testid="stCustomComponentV1"], iframe {
-        display: none !important;
-        height: 0 !important;
-        width: 0 !important;
-        margin: 0 !important;
-        padding: 0 !important;
+        position: absolute !important;
+        top: -9999px !important;
+        left: -9999px !important;
+        width: 1px !important;
+        height: 1px !important;
+        opacity: 0.01 !important;
+        pointer-events: none !important;
         border: none !important;
     }
     
     /* Centered Main Block Container with Balanced Margins */
     .main .block-container {
-        max-width: 1300px !important;
+        max-width: 1320px !important;
         padding: 1.25rem 2rem 2.5rem 2rem !important;
         margin: 0 auto !important;
     }
@@ -169,7 +201,7 @@ st.markdown("""
         align-items: center;
         justify-content: space-between;
         padding: 0.5rem 1.4rem;
-        background: rgba(14, 18, 26, 0.65);
+        background: rgba(14, 18, 26, 0.62);
         backdrop-filter: blur(25px);
         -webkit-backdrop-filter: blur(25px);
         border: 1px solid rgba(255, 255, 255, 0.16);
