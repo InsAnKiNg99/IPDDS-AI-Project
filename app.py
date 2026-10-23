@@ -6,6 +6,7 @@ import tensorflow as tf
 from PIL import Image
 import numpy as np
 
+ main
 # 1. Page Configuration (Strict Single-Page No-Scroll Layout)
 st.set_page_config(
     page_title="IPDDS | Plant Pathology Evolved",
@@ -572,6 +573,16 @@ def load_trained_model():
                 pass
     return None, None
 
+st.set_page_config(page_title="Plant Disease Detector", page_icon="🌿")
+st.title("Intelligent Plant Disease Detection")
+st.write("Upload a clear picture of a plant leaf, and our AI will determine its health status.")
+
+@st.cache_resource
+def load_model():
+    model = tf.keras.models.load_model("model/disease_model.h5")
+    return model
+ main
+
 def load_metadata():
     json_path = os.path.join("model", "class_indices.json")
     if os.path.exists(json_path):
@@ -584,6 +595,7 @@ def load_metadata():
             pass
     return DEFAULT_CLASSES, {}, (128, 128)
 
+ main
 class_names, metadata_map, target_img_size = load_metadata()
 model, loaded_path = load_trained_model()
 
@@ -621,9 +633,17 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+uploaded_file = st.file_uploader("Choose a leaf image...", type=["jpg", "jpeg", "png"])
+
+if uploaded_file is not None:
+    image = Image.open(uploaded_file)
+    st.image(image, caption="Uploaded Leaf Image", use_column_width=True)
+ main
+
 # 7. Interactive Three Liquid-Glass Cards Grid
 col_c1, col_c2, col_c3 = st.columns([1, 1, 1], gap="small")
 
+ main
 if "selected_sample" not in st.session_state:
     st.session_state.selected_sample = None
 
@@ -788,3 +808,17 @@ with col_c3:
         <p class="card-desc">Targeted bio-fungicides and cultural practices to halt disease spread.</p>
     </div>
     """, unsafe_allow_html=True)
+
+    image_resized = image.resize((256, 256))
+    image_array = np.array(image_resized)
+    image_array = np.expand_dims(image_array, axis=0)
+    
+    prediction_scores = model.predict(image_array)
+    
+    class_names = ["Healthy", "Early Blight", "Late Blight"]
+    
+    predicted_index = np.argmax(prediction_scores)
+    final_result = class_names[predicted_index]
+    
+    st.success(f"Prediction: **{final_result}**")
+ main
