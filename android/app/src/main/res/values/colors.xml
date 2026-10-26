@@ -1,0 +1,29 @@
+<resources>
+    <color name="screen_background">#E6ECE3</color>
+    <color name="surface_secondary">#D3E4D6</color>
+    <color name="surface_photo">#BFD5C8</color>
+    <color name="text_primary">#18271E</color>
+    <color name="text_secondary">#52675A</color>
+    <color name="text_accent">#28583A</color>
+    <color name="color_accent">#4B8F5B</color>
+    <color name="button_primary_text">#FFFFFF</color>
+    <color name="button_secondary_text">#234A35</color>
+    <color name="status_background">#E8DCD7</color>
+    <color name="text_error">#873E37</color>
+    <color name="text_warning">#79521B</color>
+    <color name="icon_background">#10271C</color>
+    <color name="icon_foreground">#AEE5B7</color>
+    <color name="icon_leaf_light">#BCE99C</color>
+    <color name="icon_leaf_dark">#63C78A</color>
+    <color name="wallpaper_leaf_primary">#28398B5D</color>
+    <color name="wallpaper_leaf_secondary">#1E50A873</color>
+    <color name="wallpaper_bubble">#40FFFFFF</color>
+    <color name="glass_surface_top">#EAF3F5EB</color>
+    <color name="glass_surface_bottom">#CFDCE8DA</color>
+    <color name="glass_button_top">#EAF6F5E9</color>
+    <color name="glass_button_bottom">#D5CEDFCF</color>
+    <color name="glass_border">#A8FFFFFF</color>
+    <color name="model_info_divider">#55829B7B</color>
+    <color name="primary_button_top">#5C9867</color>
+    <color name="primary_button_bottom">#356E47</color>
+</resources>

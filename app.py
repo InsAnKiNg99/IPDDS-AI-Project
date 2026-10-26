@@ -7,7 +7,7 @@ import tensorflow as tf
 from PIL import Image
 import numpy as np
 
-# 1. Page Configuration
+
 st.set_page_config(
     page_title="IPDDS | Plant Disease Detection System",
     page_icon="🌿",
@@ -15,7 +15,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Helper to load images locally as base64 for instant, 100% offline-ready display
+
 def get_base64_data_uri(image_path, fallback_url):
     if os.path.exists(image_path):
         try:
@@ -29,23 +29,21 @@ def get_base64_data_uri(image_path, fallback_url):
 FALLBACK_BASE_URL = "https://images.higgs.ai/?default=1&output=webp&url=https%3A%2F%2Fd8j0ntlcm91z4.cloudfront.net%2Fuser_38xzZboKViGWJOttwIXH07lWA1P%2Fhf_20260609_201152_bba90a12-bf12-459f-91f0-51f237dbaf3b.png&w=1920&q=85"
 FALLBACK_DISEASED_URL = "https://images.higgs.ai/?default=1&output=webp&url=https%3A%2F%2Fd8j0ntlcm91z4.cloudfront.net%2Fuser_38xzZboKViGWJOttwIXH07lWA1P%2Fhf_20260609_195923_b0ba8ace-1d1d-4f2c-9a28-1ab84b330680.png&w=1920&q=85"
 
-# Local plant flowering rock (base) and decayed rock (reveal)
+
 BASE_IMG_URI = get_base64_data_uri(os.path.join("samples", "bg_image_2.webp"), FALLBACK_BASE_URL)
 DISEASED_IMG_URI = get_base64_data_uri(os.path.join("samples", "bg_image_1.webp"), FALLBACK_DISEASED_URL)
 
-# 2. Inject Cursor Spotlight Reveal Engine (Seamless 60 FPS LERP, NO Red Circle)
+
 components.html(f"""
 <script>
 (function() {{
     const doc = window.parent.document;
     
-    // Clean up any old red rings or stale elements
     ['motion-bg-video', 'motion-vignette', 'ipdds-spotlight-ring'].forEach(id => {{
         const el = doc.getElementById(id);
         if (el) el.remove();
     }});
     
-    // 1. Base Layer (Lush healthy flowering botanical plant rock)
     let baseLayer = doc.getElementById('ipdds-base-bg');
     if (!baseLayer) {{
         baseLayer = doc.createElement('div');
@@ -64,7 +62,6 @@ components.html(f"""
     }}
     baseLayer.style.backgroundImage = 'url("{BASE_IMG_URI}")';
     
-    // 2. Reveal Layer (Diseased/blight rock revealed seamlessly under cursor)
     let revealLayer = doc.getElementById('ipdds-reveal-bg');
     if (!revealLayer) {{
         revealLayer = doc.createElement('div');
@@ -85,7 +82,6 @@ components.html(f"""
     }}
     revealLayer.style.backgroundImage = 'url("{DISEASED_IMG_URI}")';
 
-    // 3. Smooth Cursor Tracking with LERP (Pure spotlight mask, NO red circle)
     let mouse = {{ x: -999, y: -999 }};
     let smooth = {{ x: -999, y: -999 }};
     const SPOTLIGHT_R = 270;
@@ -120,14 +116,13 @@ components.html(f"""
 </script>
 """, height=0, width=0)
 
-# 3. Typography & Responsive Layout CSS System (Clean, Never Clips, Interactive Rock)
+
 st.markdown("""
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@1,400;1,500;1,600&display=swap" rel="stylesheet">
 
 <style>
-    /* Clean Viewport Reset */
     *, *::before, *::after {
         box-sizing: border-box !important;
     }
@@ -143,7 +138,6 @@ st.markdown("""
         overflow-y: auto !important;
     }
     
-    /* App Layer Sits at z-index 10 (Transparent over the botanical rock at z-index 0/1) */
     .stApp {
         background: transparent !important;
         background-color: transparent !important;
@@ -161,13 +155,11 @@ st.markdown("""
         overflow-x: hidden !important;
     }
 
-    /* Hide Streamlit UI Chrome */
     #MainMenu, footer, header, .stDeployButton, [data-testid="stToolbar"] {
         display: none !important;
         visibility: hidden !important;
     }
 
-    /* Safe Iframe Handling: Off-screen instead of display:none so browser executes JavaScript */
     [data-testid="stCustomComponentV1"], iframe {
         position: absolute !important;
         top: -9999px !important;
@@ -179,14 +171,12 @@ st.markdown("""
         border: none !important;
     }
     
-    /* Centered Main Block Container with Balanced Margins */
     .main .block-container {
         max-width: 1320px !important;
         padding: 1.25rem 2rem 2.5rem 2rem !important;
         margin: 0 auto !important;
     }
 
-    /* Typography Classes */
     .font-playfair {
         font-family: 'Playfair Display', Georgia, serif !important;
     }
@@ -195,7 +185,6 @@ st.markdown("""
         font-family: 'Inter', sans-serif !important;
     }
 
-    /* Top Floating Navigation Bar */
     .top-nav {
         display: flex;
         align-items: center;
@@ -258,7 +247,6 @@ st.markdown("""
         white-space: nowrap;
     }
 
-    /* Hero Heading Section (Clean Project Typography) */
     .hero-container {
         margin-bottom: 1.5rem;
         text-align: left;
@@ -292,7 +280,6 @@ st.markdown("""
         margin: 0;
     }
 
-    /* Interactive Bottom Three Liquid-Glass Cards */
     div[data-testid="stHorizontalBlock"] {
         gap: 1.25rem !important;
         align-items: stretch !important;
@@ -369,7 +356,6 @@ st.markdown("""
         white-space: nowrap;
     }
 
-    /* Card Bottom Titles */
     .card-title {
         font-size: 1.45rem;
         line-height: 1.1;
@@ -386,7 +372,6 @@ st.markdown("""
         margin: 0;
     }
 
-    /* File Uploader Clean Liquid Style */
     [data-testid="stFileUploader"] {
         margin-bottom: 0.5rem !important;
     }
@@ -406,7 +391,6 @@ st.markdown("""
         border: none !important;
     }
 
-    /* Button Pill Overrides */
     .stButton > button {
         background: rgba(255, 255, 255, 0.08) !important;
         color: #ffffff !important;
@@ -430,7 +414,6 @@ st.markdown("""
         transform: translateY(-1px) !important;
     }
 
-    /* Diagnostic Badges */
     .badge-healthy {
         background: rgba(16, 185, 129, 0.22);
         border: 1px solid rgba(16, 185, 129, 0.55);
@@ -481,7 +464,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 4. Model & Metadata Loading
+
 DEFAULT_CLASSES = [
     "Potato___Early_blight",
     "Potato___Late_blight",
@@ -546,7 +529,7 @@ if crop_model is not None and crop_model.output_shape[-1] != 2:
 
 TOMATO_CROP_CONFIDENCE_THRESHOLD = 0.8
 
-# 5. Top Navigation Bar (Fixed Liquid Pill)
+
 st.markdown("""
 <div class="top-nav">
     <div class="nav-brand">
@@ -567,7 +550,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# 6. Hero Heading Section (Clear, Project-Specific Text)
+
 st.markdown("""
 <div class="hero-container">
     <div class="hero-kicker">Intelligent Plant Disease Detection System</div>
@@ -580,16 +563,16 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Session state initialization
+
 if "selected_sample" not in st.session_state:
     st.session_state.selected_sample = None
 if "selected_label" not in st.session_state:
     st.session_state.selected_label = None
 
-# 7. Interactive Three Liquid-Glass Cards Grid
+
 col_c1, col_c2, col_c3 = st.columns([1, 1, 1], gap="medium")
 
-# Card 1: Leaf Specimen Input
+
 with col_c1:
     st.markdown("""
     <div class="card-top-row">
@@ -635,7 +618,7 @@ with col_c1:
             st.session_state.selected_sample = os.path.join("samples", "sample_tomato_healthy.jpg")
             st.session_state.selected_label = "Tomato Healthy Leaf (Demo)"
 
-    # Resolve active image
+
     eval_image = None
     source_name = None
     if uploaded_file is not None:
@@ -662,7 +645,7 @@ with col_c1:
     </div>
     """, unsafe_allow_html=True)
 
-# Run Inference if Image is available
+
 pred_data = None
 if eval_image is not None and model is not None:
     img_resized = eval_image.resize(target_img_size)
@@ -722,7 +705,7 @@ if eval_image is not None and model is not None:
         "preds": preds
     }
 
-# Card 2: Neural Diagnosis
+
 with col_c2:
     if (
         pred_data is not None
@@ -785,7 +768,7 @@ with col_c2:
     </div>
     """, unsafe_allow_html=True)
 
-# Card 3: Treatment Protocol
+
 with col_c3:
     st.markdown("""
     <div class="card-top-row">

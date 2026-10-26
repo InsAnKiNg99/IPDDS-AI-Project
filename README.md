@@ -61,3 +61,8 @@ Launch the Streamlit app:
 streamlit run app.py
 ```
 Open `http://localhost:8501` in your browser, upload an image of a Potato or Tomato leaf, and inspect the detected crop, disease diagnosis, confidence breakdown, and care recommendations. If auto-detection is uncertain for an unusual photo, use the crop-identification selector to choose Potato or Tomato; the disease prediction and treatment are then restricted to that crop.
+
+### 5. Native Android App
+Open the [`android`](android) folder in Android Studio and build the debug APK. The app bundles both trained TensorFlow Lite models and matching disease/treatment metadata, so image checks work offline. It supports Android 7.0 and newer.
+
+See [`android/README.md`](android/README.md) for build, install, and image-preprocessing details.

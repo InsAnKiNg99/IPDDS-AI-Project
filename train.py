@@ -12,7 +12,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers, models, callbacks
 
-# 13 Targeted Potato and Tomato Classes
+
 POTATO_TOMATO_CLASSES = [
     "Potato___Early_blight",
     "Potato___Late_blight",
@@ -130,7 +130,7 @@ def resolve_dataset_paths(user_path=None):
         val_dir = os.path.join(user_path, "val") if os.path.exists(os.path.join(user_path, "val")) else None
         return train_dir, val_dir
 
-    # Check default Kagglehub cache
+
     cache_path = os.path.expanduser(r"~/.cache/kagglehub/datasets/mohitsingh1804/plantvillage/versions/1/PlantVillage")
     if os.path.exists(cache_path):
         return os.path.join(cache_path, "train"), os.path.join(cache_path, "val")
@@ -154,13 +154,13 @@ def build_model(num_classes, img_size=(128, 128)):
     """
     inputs = layers.Input(shape=(img_size[0], img_size[1], 3))
     
-    # 1. Data Augmentation & Normalization
+
     x = layers.RandomFlip("horizontal_and_vertical")(inputs)
     x = layers.RandomRotation(0.15)(x)
     x = layers.RandomZoom(0.1)(x)
     x = layers.Rescaling(1./255)(x)
     
-    # 2. Convolutional Feature Extractor
+
     x = layers.Conv2D(32, (3, 3), padding="same", activation="relu")(x)
     x = layers.BatchNormalization()(x)
     x = layers.MaxPooling2D((2, 2))(x)
@@ -177,7 +177,7 @@ def build_model(num_classes, img_size=(128, 128)):
     x = layers.BatchNormalization()(x)
     x = layers.MaxPooling2D((2, 2))(x)
     
-    # 3. Dense Classifier Head
+
     x = layers.GlobalAveragePooling2D()(x)
     x = layers.Dense(128, activation="relu")(x)
     x = layers.Dropout(0.4)(x)
@@ -277,18 +277,18 @@ def train(dataset_dir=None, epochs=10, batch_size=32, img_size=(128, 128)):
             shuffle=False
         )
     else:
-        # 80/20 train/validation split fallback
+
         val_size = int(0.2 * len(train_ds))
         val_ds = train_ds.take(val_size)
         train_ds = train_ds.skip(val_size)
 
-    # Performance optimization: prefetch & autotune
+
     AUTOTUNE = tf.data.AUTOTUNE
     train_ds = train_ds.prefetch(buffer_size=AUTOTUNE)
     if val_ds:
         val_ds = val_ds.prefetch(buffer_size=AUTOTUNE)
 
-    # Build model
+
     model = build_model(num_classes=len(POTATO_TOMATO_CLASSES), img_size=img_size)
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
@@ -297,7 +297,7 @@ def train(dataset_dir=None, epochs=10, batch_size=32, img_size=(128, 128)):
     )
     model.summary()
 
-    # Callbacks
+
     os.makedirs("model", exist_ok=True)
     h5_path = os.path.join("model", "disease_model.h5")
     keras_path = os.path.join("model", "disease_model.keras")
@@ -314,7 +314,7 @@ def train(dataset_dir=None, epochs=10, batch_size=32, img_size=(128, 128)):
         restore_best_weights=True
     )
     
-    # Save class indices metadata for app.py
+
     metadata_export = {
         "class_names": POTATO_TOMATO_CLASSES,
         "classes": DISEASE_METADATA,
@@ -332,7 +332,7 @@ def train(dataset_dir=None, epochs=10, batch_size=32, img_size=(128, 128)):
         callbacks=[checkpoint_cb, early_stop_cb]
     )
 
-    # Save final models
+
     model.save(keras_path)
     model.save(h5_path)
     print(f"\n[+] Training complete! Model saved to:\n  - {h5_path}\n  - {keras_path}")
