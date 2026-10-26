@@ -6,6 +6,7 @@ import streamlit.components.v1 as components
 import tensorflow as tf
 from PIL import Image
 import numpy as np
+import cv2
 
 
 st.set_page_config(
@@ -147,33 +148,67 @@ st.markdown("""
         min-height: 100vh !important;
     }
     
-    [data-testid="stAppViewContainer"], 
-    [data-testid="stHeader"], 
-    section.main {
-        background: transparent !important;
-        background-color: transparent !important;
-        overflow-x: hidden !important;
+    /* 1. Completely collapse and hide Streamlit's default header */
+    header[data-testid="stHeader"],
+    header,
+    [data-testid="stHeader"] {
+        display: none !important;
+        height: 0px !important;
+        min-height: 0px !important;
+        padding: 0px !important;
+        margin: 0px !important;
     }
 
-    #MainMenu, footer, header, .stDeployButton, [data-testid="stToolbar"] {
+    #MainMenu, footer, .stDeployButton, [data-testid="stToolbar"] {
         display: none !important;
         visibility: hidden !important;
+        height: 0px !important;
+        min-height: 0px !important;
+        padding: 0px !important;
+        margin: 0px !important;
     }
 
-    [data-testid="stCustomComponentV1"], iframe {
+    /* 2. Strip all top padding and margins from main layout containers */
+    .main, 
+    .stApp, 
+    [data-testid="stAppViewContainer"], 
+    [data-testid="stAppViewBlockContainer"],
+    [data-testid="stMainBlockContainer"],
+    [data-testid="stMain"],
+    section.main,
+    .block-container,
+    div[data-testid="block-container"] {
+        padding-top: 0rem !important;
+        margin-top: 0rem !important;
+        top: 0px !important;
+    }
+
+    /* Collapse empty element containers and iframes from layout flow */
+    div[data-testid="element-container"]:has(iframe),
+    div[data-testid="element-container"]:has([data-testid="stCustomComponentV1"]),
+    [data-testid="stCustomComponentV1"], 
+    iframe {
         position: absolute !important;
         top: -9999px !important;
         left: -9999px !important;
         width: 1px !important;
         height: 1px !important;
+        min-height: 0px !important;
+        margin: 0px !important;
+        padding: 0px !important;
         opacity: 0.01 !important;
         pointer-events: none !important;
         border: none !important;
     }
     
-    .main .block-container {
+    .main .block-container,
+    [data-testid="block-container"],
+    div[data-testid="stAppViewBlockContainer"] {
         max-width: 1320px !important;
-        padding: 1.25rem 2rem 2.5rem 2rem !important;
+        padding-top: 0rem !important;
+        padding-bottom: 2rem !important;
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
         margin: 0 auto !important;
     }
 
@@ -185,18 +220,21 @@ st.markdown("""
         font-family: 'Inter', sans-serif !important;
     }
 
+    /* 3. Ensure the custom navbar container has no top margin/offset */
     .top-nav {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 0.5rem 1.4rem;
-        background: rgba(14, 18, 26, 0.62);
+        padding: 0.45rem 1.4rem;
+        background: rgba(14, 18, 26, 0.75);
         backdrop-filter: blur(25px);
         -webkit-backdrop-filter: blur(25px);
         border: 1px solid rgba(255, 255, 255, 0.16);
         border-radius: 9999px;
         box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.2), 0 10px 30px rgba(0,0,0,0.6);
-        margin-bottom: 1.25rem;
+        margin-top: 0rem !important;
+        top: 0px !important;
+        margin-bottom: 1.15rem !important;
     }
     
     .nav-brand {
@@ -285,9 +323,9 @@ st.markdown("""
         align-items: stretch !important;
     }
 
-    div[data-testid="stColumn"], 
-    div[data-testid="column"], 
-    .stColumn {
+    /* Primary Cards (top-level columns only) */
+    div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"], 
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
         background: rgba(12, 16, 24, 0.76) !important;
         backdrop-filter: blur(40px) saturate(180%) !important;
         -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
@@ -295,28 +333,55 @@ st.markdown("""
         box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.2), 0 20px 45px rgba(0, 0, 0, 0.75) !important;
         border-radius: 1.25rem !important;
         padding: 1.35rem !important;
-        min-height: 420px !important;
+        min-height: 440px !important;
         display: flex !important;
         flex-direction: column !important;
         justify-content: space-between !important;
         transition: transform 0.25s ease, border-color 0.25s ease !important;
     }
     
-    div[data-testid="stColumn"]:hover, 
-    div[data-testid="column"]:hover, 
-    .stColumn:hover {
+    div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:hover, 
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:hover {
         transform: translateY(-2px);
         border-color: rgba(255, 255, 255, 0.38) !important;
         box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.3), 0 25px 55px rgba(0, 0, 0, 0.85) !important;
     }
 
-    div[data-testid="stColumn"] > div, 
-    div[data-testid="column"] > div {
+    div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] > div, 
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"] > div {
         height: 100% !important;
         display: flex !important;
         flex-direction: column !important;
         justify-content: space-between !important;
         gap: 0.65rem !important;
+    }
+
+    /* Reset nested button columns inside primary cards */
+    div[data-testid="stColumn"] div[data-testid="stHorizontalBlock"] {
+        gap: 0.5rem !important;
+        margin-bottom: 0.2rem !important;
+    }
+    div[data-testid="stColumn"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+        background: transparent !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        border: none !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        padding: 0 !important;
+        min-height: auto !important;
+        display: block !important;
+        transform: none !important;
+    }
+    div[data-testid="stColumn"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:hover {
+        transform: none !important;
+        border-color: transparent !important;
+        box-shadow: none !important;
+    }
+    div[data-testid="stColumn"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] > div {
+        height: auto !important;
+        display: block !important;
+        gap: 0.35rem !important;
     }
 
     .card-top-row {
@@ -373,7 +438,7 @@ st.markdown("""
     }
 
     [data-testid="stFileUploader"] {
-        margin-bottom: 0.5rem !important;
+        margin-bottom: 0.4rem !important;
     }
     [data-testid="stFileUploader"] section {
         background: rgba(255, 255, 255, 0.04) !important;
@@ -389,6 +454,48 @@ st.markdown("""
         font-size: 0.75rem !important;
         padding: 0.25rem 0.85rem !important;
         border: none !important;
+    }
+
+    /* Glassmorphic Selectbox styling */
+    [data-testid="stSelectbox"] {
+        margin-bottom: 0.4rem !important;
+    }
+    [data-testid="stSelectbox"] label p {
+        font-size: 0.8rem !important;
+        font-weight: 500 !important;
+        color: rgba(255, 255, 255, 0.85) !important;
+        margin-bottom: 0.2rem !important;
+    }
+    [data-testid="stSelectbox"] div[data-baseweb="select"] {
+        background: rgba(255, 255, 255, 0.05) !important;
+        border: 1px solid rgba(255, 255, 255, 0.18) !important;
+        border-radius: 10px !important;
+        color: #ffffff !important;
+    }
+    [data-testid="stSelectbox"] div[data-baseweb="select"]:hover {
+        border-color: rgba(255, 255, 255, 0.4) !important;
+    }
+    [data-testid="stSelectbox"] div[data-baseweb="select"] * {
+        color: #ffffff !important;
+        background: transparent !important;
+    }
+    div[data-baseweb="popover"], 
+    div[data-baseweb="menu"], 
+    ul[role="listbox"] {
+        background: #0d131a !important;
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
+        border-radius: 10px !important;
+        box-shadow: 0 15px 35px rgba(0, 0, 0, 0.85) !important;
+    }
+    ul[role="listbox"] li {
+        color: #ffffff !important;
+        background: transparent !important;
+        font-size: 0.82rem !important;
+    }
+    ul[role="listbox"] li:hover,
+    ul[role="listbox"] li[aria-selected="true"] {
+        background: rgba(52, 211, 153, 0.18) !important;
+        color: #34d399 !important;
     }
 
     .stButton > button {
@@ -469,16 +576,16 @@ DEFAULT_CLASSES = [
     "Potato___Early_blight",
     "Potato___Late_blight",
     "Potato___healthy",
-    "Tomato___Bacterial_spot",
-    "Tomato___Early_blight",
-    "Tomato___healthy",
-    "Tomato___Late_blight",
-    "Tomato___Leaf_Mold",
-    "Tomato___Septoria_leaf_spot",
-    "Tomato___Spider_mites Two-spotted_spider_mite",
-    "Tomato___Target_Spot",
-    "Tomato___Tomato_mosaic_virus",
-    "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
+    "Tomato_Bacterial_spot",
+    "Tomato_Early_blight",
+    "Tomato_Late_blight",
+    "Tomato_Leaf_Mold",
+    "Tomato_Septoria_leaf_spot",
+    "Tomato_Spider_mites_Two_spotted_spider_mite",
+    "Tomato__Target_Spot",
+    "Tomato__Tomato_YellowLeaf__Curl_Virus",
+    "Tomato__Tomato_mosaic_virus",
+    "Tomato_healthy"
 ]
 
 def resolve_trained_model_path():
@@ -495,13 +602,13 @@ def resolve_trained_model_path():
 def load_trained_model(model_path, model_modified_ns):
     if model_path is None:
         return None, None
-    return tf.keras.models.load_model(model_path), model_path
+    return tf.keras.models.load_model(model_path, compile=False), model_path
 
 @st.cache_resource
 def load_crop_model(model_path, model_modified_ns):
     if model_path is None:
         return None
-    return tf.keras.models.load_model(model_path)
+    return tf.keras.models.load_model(model_path, compile=False)
 
 def load_metadata():
     json_path = os.path.join("model", "class_indices.json")
@@ -515,6 +622,74 @@ def load_metadata():
             pass
     return DEFAULT_CLASSES, {}, (128, 128)
 
+def validate_plant_leaf(image: Image.Image) -> tuple[bool, str]:
+    """
+    Validates whether an input image is a genuine plant/leaf specimen.
+    Rejects out-of-distribution inputs (black/white images, noise, selfies, objects, non-leaf photos).
+    Returns (is_valid, reason_message).
+    """
+    if image is None:
+        return False, "No specimen provided."
+
+    np_img = np.array(image.convert("RGB"), dtype=np.uint8)
+    h, w, _ = np_img.shape
+    if h < 32 or w < 32:
+        return False, "Specimen resolution is too low."
+
+    # 1. Texture & Signal Variance (reject blank / flat / solid color images)
+    gray = cv2.cvtColor(np_img, cv2.COLOR_RGB2GRAY)
+    lap_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    channel_std = float(np.std(np_img))
+    if lap_var < 35.0 or channel_std < 12.0:
+        return False, "Image lacks foliage texture or contrast."
+
+    # 2. Total Variation (reject synthetic random/speckle noise)
+    diff_x = np.mean(np.abs(np_img[:, 1:, :].astype(float) - np_img[:, :-1, :].astype(float)))
+    diff_y = np.mean(np.abs(np_img[1:, :, :].astype(float) - np_img[:-1, :, :].astype(float)))
+    tv = (diff_x + diff_y) / 2.0
+    if tv > 58.0:
+        return False, "Synthetic noise or high-frequency non-organic pattern detected."
+
+    # 3. Foliage & Chlorophyll Color Analysis (HSV + Excess Green Index)
+    hsv = cv2.cvtColor(np_img, cv2.COLOR_RGB2HSV)
+    hue = hsv[:, :, 0]
+    sat = hsv[:, :, 1]
+    val = hsv[:, :, 2]
+
+    # Chlorophyll green spectrum (Hue 28-88, Sat >= 35, Val >= 30)
+    green_mask = (hue >= 28) & (hue <= 88) & (sat >= 35) & (val >= 30)
+    # Lesion / necrosis spectrum (Hue 14-27, Sat >= 40, Val >= 30)
+    yellow_brown_mask = (hue >= 14) & (hue < 28) & (sat >= 40) & (val >= 30)
+    foliage_mask = green_mask | yellow_brown_mask
+
+    green_ratio = float(np.mean(green_mask))
+    foliage_ratio = float(np.mean(foliage_mask))
+
+    # Excess Green Index: 2G - R - B
+    r = np_img[:, :, 0].astype(np.float32)
+    g = np_img[:, :, 1].astype(np.float32)
+    b = np_img[:, :, 2].astype(np.float32)
+    exg = 2 * g - r - b
+    exg_pos = float(np.mean(exg > 5.0))
+
+    # 4. Spatial Clustering (verify connected anatomical leaf body)
+    foliage_uint8 = foliage_mask.astype(np.uint8) * 255
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(foliage_uint8)
+    max_cluster_area = 0
+    if num_labels > 1:
+        max_cluster_area = int(np.max(stats[1:, cv2.CC_STAT_AREA]))
+    cluster_ratio = max_cluster_area / float(h * w)
+
+    is_plant = (
+        (green_ratio >= 0.08 or (foliage_ratio >= 0.15 and green_ratio >= 0.04) or exg_pos >= 0.12)
+        and cluster_ratio >= 0.03
+    )
+
+    if not is_plant:
+        return False, "Specimen lacks plant foliage pigments or anatomical leaf structure."
+
+    return True, "Valid leaf specimen."
+
 class_names, metadata_map, target_img_size = load_metadata()
 model_path = resolve_trained_model_path()
 model_modified_ns = os.stat(model_path).st_mtime_ns if model_path else 0
@@ -522,10 +697,11 @@ model, loaded_path = load_trained_model(model_path, model_modified_ns)
 crop_model_path = os.path.join("model", "crop_type_model.keras")
 crop_model_modified_ns = os.stat(crop_model_path).st_mtime_ns if os.path.exists(crop_model_path) else 0
 crop_model = load_crop_model(crop_model_path if crop_model_modified_ns else None, crop_model_modified_ns)
+
 if model is not None and model.output_shape[-1] != len(class_names):
-    raise ValueError("The disease model output count does not match model/class_indices.json.")
+    st.error("The disease model output count does not match model/class_indices.json.")
 if crop_model is not None and crop_model.output_shape[-1] != 2:
-    raise ValueError("The crop model must output Potato and Tomato probabilities.")
+    st.error("The crop model must output Potato and Tomato probabilities.")
 
 TOMATO_CROP_CONFIDENCE_THRESHOLD = 0.8
 
@@ -570,7 +746,7 @@ if "selected_label" not in st.session_state:
     st.session_state.selected_label = None
 
 
-col_c1, col_c2, col_c3 = st.columns([1, 1, 1], gap="medium")
+col_c1, col_c2 = st.columns([1, 1.4], gap="medium")
 
 
 with col_c1:
@@ -583,12 +759,12 @@ with col_c1:
             <span class="pill-tag">Tomato</span>
             <span class="pill-tag">Potato</span>
             <span class="pill-tag">Upload</span>
-            <span class="pill-tag">Sample</span>
+            <span class="pill-tag">Benchmark</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
     
-    st.markdown("<div style='font-size: 0.85rem; font-weight: 500; margin-bottom: 0.3rem;'>Upload Leaf Image</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size: 0.82rem; font-weight: 500; margin-bottom: 0.25rem;'>Upload Leaf Image</div>", unsafe_allow_html=True)
     uploaded_file = st.file_uploader(
         "Upload Leaf Image", 
         type=["jpg", "jpeg", "png"], 
@@ -601,7 +777,7 @@ with col_c1:
         help="Auto-detect uses the trained crop model. Select a crop manually if the automatic result is incorrect."
     )
     
-    st.markdown("<div style='font-size: 0.85rem; font-weight: 500; margin: 0.6rem 0 0.35rem 0;'>Or Select Benchmark Leaf</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size: 0.82rem; font-weight: 500; margin: 0.5rem 0 0.3rem 0;'>Or Select Benchmark Leaf</div>", unsafe_allow_html=True)
     b_col1, b_col2 = st.columns(2)
     with b_col1:
         if st.button("🍅 Tomato Blight", key="btn_tb"):
@@ -618,122 +794,146 @@ with col_c1:
             st.session_state.selected_sample = os.path.join("samples", "sample_tomato_healthy.jpg")
             st.session_state.selected_label = "Tomato Healthy Leaf (Demo)"
 
-
     eval_image = None
     source_name = None
     if uploaded_file is not None:
-        eval_image = Image.open(uploaded_file).convert("RGB")
-        source_name = uploaded_file.name
+        try:
+            eval_image = Image.open(uploaded_file).convert("RGB")
+            source_name = uploaded_file.name
+        except Exception:
+            eval_image = None
+            source_name = None
     elif st.session_state.selected_sample and os.path.exists(st.session_state.selected_sample):
-        eval_image = Image.open(st.session_state.selected_sample).convert("RGB")
-        source_name = st.session_state.selected_label or os.path.basename(st.session_state.selected_sample)
+        try:
+            eval_image = Image.open(st.session_state.selected_sample).convert("RGB")
+            source_name = st.session_state.selected_label or os.path.basename(st.session_state.selected_sample)
+        except Exception:
+            eval_image = None
+            source_name = None
+
+    is_valid_specimen = False
+    validation_error = None
+    if eval_image is not None:
+        is_valid_specimen, val_msg = validate_plant_leaf(eval_image)
+        if not is_valid_specimen:
+            validation_error = "No valid leaf or plant detected in the photo. Please upload a clear image of a tomato or potato leaf."
 
     if eval_image is not None:
-        st.markdown(f"""
-        <div class="leaf-preview-box">
-            <span style="font-size: 1.1rem;">📷</span>
-            <div style="font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                <span style="font-weight: 600; color: #34d399;">Active Leaf:</span> {source_name}
+        if validation_error:
+            st.error(validation_error)
+        else:
+            st.markdown(f"""
+            <div class="leaf-preview-box">
+                <span style="font-size: 1.1rem;">📷</span>
+                <div style="font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    <span style="font-weight: 600; color: #34d399;">Active Specimen:</span> {source_name}
+                </div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
     st.markdown("""
-    <div style="margin-top: auto;">
+    <div style="margin-top: auto; padding-top: 0.5rem;">
         <h3 class="card-title font-playfair italic">Specimen Ingestion</h3>
-        <p class="card-desc">Upload a high-resolution field leaf photograph or click a demo sample to evaluate.</p>
+        <p class="card-desc">Upload a high-resolution field leaf photograph or click a benchmark sample to evaluate.</p>
     </div>
     """, unsafe_allow_html=True)
 
 
 pred_data = None
-if eval_image is not None and model is not None:
-    img_resized = eval_image.resize(target_img_size)
-    img_array = np.array(img_resized, dtype=np.float32)
-    img_array = np.expand_dims(img_array, axis=0)
+inference_error = None
 
-    preds = model.predict(img_array, verbose=0)[0]
-    if crop_model is not None:
-        crop_preds = crop_model.predict(img_array, verbose=0)[0]
-        crop_idx = 1 if crop_preds[1] >= TOMATO_CROP_CONFIDENCE_THRESHOLD else 0
-        detected_crop = ("Potato", "Tomato")[crop_idx]
-        crop_confidence = float(crop_preds[crop_idx]) * 100
-    else:
+if eval_image is not None and is_valid_specimen and model is not None:
+    try:
+        img_resized = eval_image.resize(target_img_size)
+        img_array = np.array(img_resized, dtype=np.float32)
+        img_array = np.expand_dims(img_array, axis=0)
+
+        preds = model.predict(img_array, verbose=0)[0]
+        if crop_model is not None:
+            crop_preds = crop_model.predict(img_array, verbose=0)[0]
+            crop_idx = 1 if crop_preds[1] >= TOMATO_CROP_CONFIDENCE_THRESHOLD else 0
+            detected_crop = ("Potato", "Tomato")[crop_idx]
+            crop_confidence = float(crop_preds[crop_idx]) * 100
+        else:
+            crop_class_indices = [
+                index for index, class_name in enumerate(class_names)
+                if class_name.startswith("Potato")
+            ]
+            tomato_class_indices = [
+                index for index, class_name in enumerate(class_names)
+                if class_name.startswith("Tomato")
+            ]
+            potato_probability = float(np.sum(preds[crop_class_indices])) if crop_class_indices else 0.0
+            tomato_probability = float(np.sum(preds[tomato_class_indices])) if tomato_class_indices else 0.0
+            detected_crop = "Potato" if potato_probability >= tomato_probability else "Tomato"
+            crop_confidence = max(potato_probability, tomato_probability) * 100
+
+        crop_name = detected_crop if crop_override == "Auto-detect" else crop_override.split(" ", 1)[0]
+        if crop_override != "Auto-detect":
+            crop_confidence = None
         crop_class_indices = [
             index for index, class_name in enumerate(class_names)
-            if class_name.startswith("Potato")
+            if class_name.startswith(crop_name)
         ]
-        tomato_class_indices = [
-            index for index, class_name in enumerate(class_names)
-            if class_name.startswith("Tomato")
-        ]
-        potato_probability = float(np.sum(preds[crop_class_indices]))
-        tomato_probability = float(np.sum(preds[tomato_class_indices]))
-        detected_crop = "Potato" if potato_probability >= tomato_probability else "Tomato"
-        crop_confidence = max(potato_probability, tomato_probability) * 100
+        if not crop_class_indices:
+            inference_error = f"No disease classes are configured for selected crop: {crop_name}"
+        else:
+            crop_probability = float(np.sum(preds[crop_class_indices]))
+            if crop_probability <= 0:
+                inference_error = f"The disease model returned no probability for selected crop: {crop_name}"
+            else:
+                crop_specific_preds = np.zeros_like(preds)
+                crop_specific_preds[crop_class_indices] = preds[crop_class_indices] / crop_probability
+                preds = crop_specific_preds
 
-    crop_name = detected_crop if crop_override == "Auto-detect" else crop_override.split(" ", 1)[0]
-    if crop_override != "Auto-detect":
-        crop_confidence = None
-    crop_class_indices = [
-        index for index, class_name in enumerate(class_names)
-        if class_name.startswith(crop_name)
-    ]
-    if not crop_class_indices:
-        raise ValueError(f"No disease classes are configured for selected crop: {crop_name}")
-    crop_probability = float(np.sum(preds[crop_class_indices]))
-    if crop_probability <= 0:
-        raise ValueError(f"The disease model returned no probability for selected crop: {crop_name}")
-    crop_specific_preds = np.zeros_like(preds)
-    crop_specific_preds[crop_class_indices] = preds[crop_class_indices] / crop_probability
-    preds = crop_specific_preds
+                pred_idx = int(np.argmax(preds))
+                confidence = float(preds[pred_idx]) * 100
+                raw_class = class_names[pred_idx] if pred_idx < len(class_names) else "Unknown"
 
-    pred_idx = int(np.argmax(preds))
-    confidence = float(preds[pred_idx]) * 100
-    raw_class = class_names[pred_idx] if pred_idx < len(class_names) else "Unknown"
-
-    info = metadata_map.get(raw_class)
-    if info is None or not info.get("recommendation"):
-        raise KeyError(f"Missing disease and treatment metadata for predicted class: {raw_class}")
-    info = {**info, "crop": crop_name}
-    pred_data = {
-        "raw_class": raw_class,
-        "info": info,
-        "confidence": confidence,
-        "crop_confidence": crop_confidence,
-        "crop_selection": crop_override,
-        "preds": preds
-    }
+                info = metadata_map.get(raw_class)
+                if info is None or not info.get("recommendation"):
+                    inference_error = f"Missing clinical metadata for predicted class: {raw_class}"
+                else:
+                    info = {**info, "crop": crop_name}
+                    pred_data = {
+                        "raw_class": raw_class,
+                        "info": info,
+                        "confidence": confidence,
+                        "crop_confidence": crop_confidence,
+                        "crop_selection": crop_override,
+                        "preds": preds
+                    }
+    except Exception as e:
+        inference_error = f"Diagnostic processing notice: {str(e)}"
 
 
 with col_c2:
-    if (
-        pred_data is not None
-        and pred_data["crop_selection"] == "Auto-detect"
-        and pred_data["crop_confidence"] < 70
-    ):
-        st.warning("Crop identification is uncertain. Confirm Potato or Tomato using the selector before relying on the disease result.")
     st.markdown("""
     <div class="card-top-row">
         <div class="card-icon-square">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg>
         </div>
         <div class="tags-cloud">
             <span class="pill-tag">92% Acc</span>
             <span class="pill-tag">&lt;150ms</span>
-            <span class="pill-tag">Real-Time</span>
-            <span class="pill-tag">CNN</span>
+            <span class="pill-tag">Dual-Stage CNN</span>
+            <span class="pill-tag">Clinical Guide</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
     
+    if inference_error:
+        st.error(inference_error)
+
     if pred_data is None:
         st.markdown("""
-        <div style="text-align: center; padding: 2.5rem 0.5rem; opacity: 0.7;">
-            <div style="font-size: 2.2rem; margin-bottom: 0.4rem;">🍃</div>
-            <div style="font-size: 0.95rem; font-weight: 500;">Awaiting Leaf Input</div>
-            <div style="font-size: 0.78rem; color: rgba(255,255,255,0.65); margin-top: 0.2rem;">
-                Upload a photo or choose a benchmark sample on the left to run inference.
+        <div style="text-align: center; padding: 3.2rem 1rem; opacity: 0.72;">
+            <div style="font-size: 2.5rem; margin-bottom: 0.4rem;">🍃</div>
+            <div style="font-size: 1.05rem; font-weight: 600; color: #ffffff;">Awaiting Foliar Specimen</div>
+            <div style="font-size: 0.82rem; color: rgba(255,255,255,0.65); max-width: 440px; margin: 0.4rem auto 0 auto; line-height: 1.5;">
+                Upload a field leaf photograph or choose a benchmark sample on the left to activate neural diagnosis and clinical remedies.
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -742,70 +942,51 @@ with col_c2:
         conf = pred_data["confidence"]
         status = info.get("status", "Unknown")
         badge_cls = "badge-healthy" if status == "Healthy" else "badge-diseased"
-        badge_text = "🟢 Healthy Crop" if status == "Healthy" else "🔴 Pathogen Detected"
-        
+        badge_text = "🟢 Healthy Specimen" if status == "Healthy" else "🔴 Pathogen Detected"
+        crop_label = info.get("crop", "Solanaceae")
+        crop_conf_str = f" ({pred_data['crop_confidence']:.1f}%)" if pred_data["crop_confidence"] is not None else " (Manual)"
+
         st.markdown(f"""
-        <div style="margin-bottom: 0.5rem;"><span class="{badge_cls}">{badge_text}</span></div>
-        <div style="font-size: 1.35rem; font-weight: 600; color: #ffffff; line-height: 1.2;">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.65rem;">
+            <div><span class="{badge_cls}">{badge_text}</span></div>
+            <span style="font-size: 0.76rem; color: rgba(255, 255, 255, 0.78); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 9999px; padding: 0.18rem 0.65rem;">
+                Host Crop: <strong style="color: #ffffff;">{crop_label}{crop_conf_str}</strong>
+            </span>
+        </div>
+
+        <div style="font-size: 1.45rem; font-weight: 600; color: #ffffff; line-height: 1.2; margin-bottom: 0.2rem;">
             {info.get("display_name", pred_data["raw_class"])}
         </div>
-        <div style="display: flex; justify-content: space-between; font-size: 0.78rem; margin-top: 0.75rem;">
-            <span style="color: rgba(255,255,255,0.65);">Confidence Score</span>
+
+        <div style="display: flex; justify-content: space-between; font-size: 0.78rem; margin-top: 0.65rem;">
+            <span style="color: rgba(255,255,255,0.65);">Pathology Confidence Score</span>
             <span style="font-weight: 600; color: #34d399;">{conf:.1f}%</span>
         </div>
         <div class="conf-bar-track">
             <div class="conf-bar-fill" style="width: {min(100.0, conf):.1f}%;"></div>
         </div>
-        <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6); margin-top: 0.35rem;">
-            Crop: <strong style="color: #ffffff;">{info["crop"]}{f" ({pred_data['crop_confidence']:.1f}% confidence)" if pred_data["crop_confidence"] is not None else " (manual selection)"}</strong> · Model Input: 128×128 RGB
+
+        <div style="border-top: 1px solid rgba(255, 255, 255, 0.12); margin: 0.85rem 0 0.8rem 0;"></div>
+
+        <div style="display: flex; flex-direction: column; gap: 0.65rem;">
+            <div>
+                <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.8px; color: rgba(255,255,255,0.5); font-weight: 600;">Causal Pathogen / Agent</div>
+                <div style="font-size: 0.92rem; font-weight: 600; color: #e2e8f0; margin-top: 0.15rem;">
+                    {info.get("pathogen", "N/A")}
+                </div>
+            </div>
+            <div>
+                <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.8px; color: rgba(255,255,255,0.5); font-weight: 600;">Agronomic Prescription & Remediation</div>
+                <div style="font-size: 0.83rem; line-height: 1.5; color: rgba(255,255,255,0.92); margin-top: 0.25rem; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 0.65rem 0.85rem;">
+                    {info.get("recommendation", "Standard cultivation practices recommended.")}
+                </div>
+            </div>
         </div>
         """, unsafe_allow_html=True)
         
     st.markdown("""
-    <div style="margin-top: auto;">
-        <h3 class="card-title font-playfair italic">Neural Diagnosis</h3>
-        <p class="card-desc">Deep convolutional network evaluates lesion morphology and foliar patterns.</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-
-with col_c3:
-    st.markdown("""
-    <div class="card-top-row">
-        <div class="card-icon-square">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
-        </div>
-        <div class="tags-cloud">
-            <span class="pill-tag">Pathogen</span>
-            <span class="pill-tag">Treatment</span>
-            <span class="pill-tag">Agronomy</span>
-            <span class="pill-tag">Remedy</span>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    if pred_data is None:
-        st.markdown("""
-        <div style="text-align: center; padding: 2.5rem 0.5rem; opacity: 0.7;">
-            <div style="font-size: 2.2rem; margin-bottom: 0.4rem;">🧪</div>
-            <div style="font-size: 0.95rem; font-weight: 500;">Clinical Guide Standby</div>
-            <div style="font-size: 0.78rem; color: rgba(255,255,255,0.65); margin-top: 0.2rem;">
-                Pathogen profile and agronomic remedies will appear upon disease diagnosis.
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        info = pred_data["info"]
-        st.markdown(f"""
-        <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.8px; color: rgba(255,255,255,0.5);">Pathogen Agent</div>
-        <div style="font-size: 0.92rem; font-weight: 600; color: #ffffff; margin-bottom: 0.6rem;">{info.get("pathogen", "N/A")}</div>
-        <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.8px; color: rgba(255,255,255,0.5);">Agronomic Prescription</div>
-        <div style="font-size: 0.82rem; line-height: 1.45; color: rgba(255,255,255,0.88);">{info["recommendation"]}</div>
-        """, unsafe_allow_html=True)
-
-    st.markdown("""
-    <div style="margin-top: auto;">
-        <h3 class="card-title font-playfair italic">Treatment Protocol</h3>
-        <p class="card-desc">Targeted bio-fungicides, copper sprays, and cultural practices to halt disease spread.</p>
+    <div style="margin-top: auto; padding-top: 0.8rem;">
+        <h3 class="card-title font-playfair italic">Neural Pathology & Clinical Protocol</h3>
+        <p class="card-desc">Foliar lesion pathology coupled directly with agronomic countermeasures.</p>
     </div>
     """, unsafe_allow_html=True)
