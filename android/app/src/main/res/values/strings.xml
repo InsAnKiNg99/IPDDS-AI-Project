@@ -1,0 +1,53 @@
+<resources>
+    <string name="app_name">IPDDS</string>
+    <string name="brand_name">🌿 IPDDS</string>
+    <string name="subtitle">Intelligent Plant Disease Detection System for offline potato and tomato leaf checks. AI estimates can be wrong; verify before treatment.</string>
+    <string name="open_navigation">Open navigation menu</string>
+    <string name="back_previous_page">Back to previous page</string>
+    <string name="drawer_subtitle">Plant health checks, made simple</string>
+    <string name="nav_leaf_checker">Leaf checker</string>
+    <string name="nav_about">About IPDDS</string>
+    <string name="nav_settings">Settings</string>
+    <string name="about_title">About IPDDS</string>
+    <string name="about_intro">Intelligent Plant Disease Detection System</string>
+    <string name="about_model_summary">Two on-device neural models identify the plant and classify its leaf condition.</string>
+    <string name="about_guidance_title">Using results</string>
+    <string name="about_guidance">Predictions are estimates. Lighting, leaf condition, and photo quality can affect results. Use the suggested care as guidance and confirm important decisions with a plant-health professional.</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_intro">Choose how IPDDS remembers your plant selection.</string>
+    <string name="remember_plant_title">Remember plant type</string>
+    <string name="remember_plant_description">Keep the last plant choice for your next check instead of returning to automatic detection.</string>
+    <string name="appearance_title">Appearance</string>
+    <string name="appearance_description">IPDDS follows your device setting and switches between its light and dark color themes automatically.</string>
+    <string name="model_card_title">MODEL OVERVIEW</string>
+    <string name="model_active_badge">ON-DEVICE</string>
+    <string name="model_accuracy_value">92%</string>
+    <string name="model_accuracy_label">Reported accuracy</string>
+    <string name="model_class_count">13</string>
+    <string name="model_class_label">Disease classes</string>
+    <string name="model_card_details">Potato + tomato · 2 on-device models · 128 × 128 RGB · Works offline</string>
+    <string name="model_accuracy_note">This reported benchmark is not a guarantee. Results on field photos may vary.</string>
+    <string name="photo_section_title">Choose a leaf photo</string>
+    <string name="crop_hint">Potato or Tomato</string>
+    <string name="photo_placeholder">Choose a clear leaf photo</string>
+    <string name="choose_image">Choose a photo</string>
+    <string name="capture_photo">Take photo</string>
+    <string name="camera_unavailable">No camera app is available on this device.</string>
+    <string name="camera_storage_error">Could not prepare a photo for the camera.</string>
+    <string name="camera_photo_error">The camera did not save a photo. Please try again.</string>
+    <string name="crop_label">Plant type</string>
+    <string name="analyze">Check leaf</string>
+    <string name="pick_photo_first">Choose a leaf photo first.</string>
+    <string name="no_image_selected">No photo selected yet</string>
+    <string-array name="crop_options">
+        <item>Auto-detect</item>
+        <item>Potato</item>
+        <item>Tomato</item>
+    </string-array>
+    <string name="treatment_title">Suggested care</string>
+    <string name="pathogen_title">Cause</string>
+    <string name="low_confidence">Crop detection is uncertain. Choose Potato or Tomato manually before using this result.</string>
+    <string name="result_crop_selected">Crop: %1$s (selected)</string>
+    <string name="result_crop_confidence">Crop: %1$s (%2$s confidence)</string>
+    <string name="result_disease_confidence">Disease confidence: %1$s</string>
+</resources>

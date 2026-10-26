@@ -1,5 +1,5 @@
 import kagglehub
 
-path = kagglehub.dataset_download("mohitsingh1804/plantvillage")
+path = kagglehub.dataset_download("moazeldsokyx/plantvillage")
 
 print("Path to dataset files:", path)

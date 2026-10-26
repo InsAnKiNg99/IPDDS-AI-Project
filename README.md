@@ -46,11 +46,13 @@ To train the CNN model specifically on Potato and Tomato:
 python train.py --epochs 10 --batch-size 32
 ```
 You can also run through the interactive Jupyter notebook:
-- Open [`notebook/model_training.ipynb`](notebook/model_training.ipynb)
+- Open [`notebook/model_training_v2.ipynb`](notebook/model_training_v2.ipynb) to train the disease and crop-type classifiers on the Tomato and Potato dataset.
+- The v2 notebook makes a separate 80/20 split inside every disease-class folder so both Potato and Tomato images are present during training and validation.
 
 Trained models are saved to:
 - `model/disease_model.h5`
 - `model/disease_model.keras`
+- `model/crop_type_model.keras`
 - `model/class_indices.json`
 
 ### 4. Running the Web Application
@@ -58,4 +60,9 @@ Launch the Streamlit app:
 ```bash
 streamlit run app.py
 ```
-Open `http://localhost:8501` in your browser, upload an image of a Potato or Tomato leaf, and inspect the real-time diagnosis, confidence breakdown, and care recommendations.
+Open `http://localhost:8501` in your browser, upload an image of a Potato or Tomato leaf, and inspect the detected crop, disease diagnosis, confidence breakdown, and care recommendations. If auto-detection is uncertain for an unusual photo, use the crop-identification selector to choose Potato or Tomato; the disease prediction and treatment are then restricted to that crop.
+
+### 5. Native Android App
+Open the [`android`](android) folder in Android Studio and build the debug APK. The app bundles both trained TensorFlow Lite models and matching disease/treatment metadata, so image checks work offline. It supports Android 7.0 and newer.
+
+See [`android/README.md`](android/README.md) for build, install, and image-preprocessing details.

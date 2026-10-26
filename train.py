@@ -8,10 +8,11 @@ import os
 import sys
 import json
 import argparse
+import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers, models, callbacks
 
-# 13 Targeted Potato and Tomato Classes
+
 POTATO_TOMATO_CLASSES = [
     "Potato___Early_blight",
     "Potato___Late_blight",
@@ -129,7 +130,7 @@ def resolve_dataset_paths(user_path=None):
         val_dir = os.path.join(user_path, "val") if os.path.exists(os.path.join(user_path, "val")) else None
         return train_dir, val_dir
 
-    # Check default Kagglehub cache
+
     cache_path = os.path.expanduser(r"~/.cache/kagglehub/datasets/mohitsingh1804/plantvillage/versions/1/PlantVillage")
     if os.path.exists(cache_path):
         return os.path.join(cache_path, "train"), os.path.join(cache_path, "val")
@@ -153,13 +154,13 @@ def build_model(num_classes, img_size=(128, 128)):
     """
     inputs = layers.Input(shape=(img_size[0], img_size[1], 3))
     
-    # 1. Data Augmentation & Normalization
+
     x = layers.RandomFlip("horizontal_and_vertical")(inputs)
     x = layers.RandomRotation(0.15)(x)
     x = layers.RandomZoom(0.1)(x)
     x = layers.Rescaling(1./255)(x)
     
-    # 2. Convolutional Feature Extractor
+
     x = layers.Conv2D(32, (3, 3), padding="same", activation="relu")(x)
     x = layers.BatchNormalization()(x)
     x = layers.MaxPooling2D((2, 2))(x)
@@ -176,7 +177,7 @@ def build_model(num_classes, img_size=(128, 128)):
     x = layers.BatchNormalization()(x)
     x = layers.MaxPooling2D((2, 2))(x)
     
-    # 3. Dense Classifier Head
+
     x = layers.GlobalAveragePooling2D()(x)
     x = layers.Dense(128, activation="relu")(x)
     x = layers.Dropout(0.4)(x)
@@ -184,6 +185,64 @@ def build_model(num_classes, img_size=(128, 128)):
     
     model = models.Model(inputs=inputs, outputs=outputs, name="IPDDS_Potato_Tomato_CNN")
     return model
+
+def train_crop_classifier(model, train_ds, val_ds):
+    feature_extractor = models.Model(
+        inputs=model.input,
+        outputs=model.layers[-3].output,
+        name="IPDDS_Feature_Extractor"
+    )
+    crop_labels_by_class = tf.constant(
+        [0 if class_name.startswith("Potato") else 1 for class_name in POTATO_TOMATO_CLASSES],
+        dtype=tf.int32
+    )
+
+    def extract_features(dataset):
+        feature_batches = []
+        crop_label_batches = []
+        for images, disease_labels in dataset:
+            feature_batches.append(feature_extractor(images, training=False).numpy())
+            crop_label_batches.append(tf.gather(crop_labels_by_class, disease_labels).numpy())
+        return np.concatenate(feature_batches), np.concatenate(crop_label_batches)
+
+    train_features, train_crop_labels = extract_features(train_ds)
+    val_features, val_crop_labels = extract_features(val_ds)
+    crop_counts = np.bincount(train_crop_labels, minlength=2)
+    crop_class_weights = {
+        index: len(train_crop_labels) / (2 * count)
+        for index, count in enumerate(crop_counts)
+    }
+
+    crop_head = models.Sequential([
+        layers.Input(shape=(feature_extractor.output_shape[-1],)),
+        layers.Dense(2, activation="softmax")
+    ], name="IPDDS_Crop_Head")
+    crop_head.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+        loss="sparse_categorical_crossentropy",
+        metrics=["accuracy"]
+    )
+    crop_head.fit(
+        train_features,
+        train_crop_labels,
+        validation_data=(val_features, val_crop_labels),
+        class_weight=crop_class_weights,
+        epochs=30,
+        batch_size=128,
+        callbacks=[callbacks.EarlyStopping(
+            monitor="val_accuracy",
+            patience=4,
+            restore_best_weights=True
+        )]
+    )
+
+    crop_model = models.Model(
+        inputs=model.input,
+        outputs=crop_head(feature_extractor.output),
+        name="IPDDS_Crop_Classifier"
+    )
+    crop_model.save(os.path.join("model", "crop_type_model.keras"))
+    print("[+] Crop classifier saved to model/crop_type_model.keras (index 0: Potato, index 1: Tomato)")
 
 def train(dataset_dir=None, epochs=10, batch_size=32, img_size=(128, 128)):
     train_path, val_path = resolve_dataset_paths(dataset_dir)
@@ -218,18 +277,18 @@ def train(dataset_dir=None, epochs=10, batch_size=32, img_size=(128, 128)):
             shuffle=False
         )
     else:
-        # 80/20 train/validation split fallback
+
         val_size = int(0.2 * len(train_ds))
         val_ds = train_ds.take(val_size)
         train_ds = train_ds.skip(val_size)
 
-    # Performance optimization: prefetch & autotune
+
     AUTOTUNE = tf.data.AUTOTUNE
     train_ds = train_ds.prefetch(buffer_size=AUTOTUNE)
     if val_ds:
         val_ds = val_ds.prefetch(buffer_size=AUTOTUNE)
 
-    # Build model
+
     model = build_model(num_classes=len(POTATO_TOMATO_CLASSES), img_size=img_size)
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
@@ -238,7 +297,7 @@ def train(dataset_dir=None, epochs=10, batch_size=32, img_size=(128, 128)):
     )
     model.summary()
 
-    # Callbacks
+
     os.makedirs("model", exist_ok=True)
     h5_path = os.path.join("model", "disease_model.h5")
     keras_path = os.path.join("model", "disease_model.keras")
@@ -255,7 +314,7 @@ def train(dataset_dir=None, epochs=10, batch_size=32, img_size=(128, 128)):
         restore_best_weights=True
     )
     
-    # Save class indices metadata for app.py
+
     metadata_export = {
         "class_names": POTATO_TOMATO_CLASSES,
         "classes": DISEASE_METADATA,
@@ -273,10 +332,11 @@ def train(dataset_dir=None, epochs=10, batch_size=32, img_size=(128, 128)):
         callbacks=[checkpoint_cb, early_stop_cb]
     )
 
-    # Save final models
+
     model.save(keras_path)
     model.save(h5_path)
     print(f"\n[+] Training complete! Model saved to:\n  - {h5_path}\n  - {keras_path}")
+    train_crop_classifier(model, train_ds, val_ds)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Potato & Tomato Plant Disease Detector")
