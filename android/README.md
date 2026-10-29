@@ -28,7 +28,7 @@ The interface follows the device's system light or dark appearance. Use the side
 
 ## How image checks work
 
-Choose or take a photo, keep **Auto-detect** selected or choose Potato/Tomato manually, then tap **Check leaf**. Large photos are downsampled before processing. The selected image is converted to RGB, resized to 128 by 128, and passed to both embedded TensorFlow Lite models as float values from 0 to 255. The model's own rescaling layer performs the same normalization used during training.
+Choose or take a close-up photo, keep **Auto-detect** selected or choose Potato/Tomato manually, then tap **Check leaf**. A local color, coverage, texture, and model-confidence check rejects blank or visibly unrelated images before showing a diagnosis. This is a conservative photo check, not a separately trained leaf detector; a green object or unusual lighting can still fool it, so important results need confirmation. Large photos are downsampled before processing. The selected image is converted to RGB, resized to 128 by 128, and passed to both embedded TensorFlow Lite models as float values from 0 to 255. The model's own rescaling layer performs the same normalization used during training.
 
 Auto-detection uses the crop model's Potato/Tomato output and a conservative Tomato confidence threshold. Selecting a crop manually restricts the disease result to that crop's labels. Disease names and treatments are loaded from the same class metadata used by the web app.
 

@@ -10,7 +10,7 @@
     <string name="nav_settings">Settings</string>
     <string name="about_title">About IPDDS</string>
     <string name="about_intro">Intelligent Plant Disease Detection System</string>
-    <string name="about_model_summary">Two on-device neural models identify the plant and classify its leaf condition.</string>
+    <string name="about_model_summary">A photo check screens for a clear leaf before two on-device models identify the plant and classify its condition.</string>
     <string name="about_guidance_title">Using results</string>
     <string name="about_guidance">Predictions are estimates. Lighting, leaf condition, and photo quality can affect results. Use the suggested care as guidance and confirm important decisions with a plant-health professional.</string>
     <string name="settings_title">Settings</string>
@@ -29,12 +29,13 @@
     <string name="model_accuracy_note">This reported benchmark is not a guarantee. Results on field photos may vary.</string>
     <string name="photo_section_title">Choose a leaf photo</string>
     <string name="crop_hint">Potato or Tomato</string>
-    <string name="photo_placeholder">Choose a clear leaf photo</string>
+    <string name="photo_placeholder">Center one clear leaf and fill most of the frame</string>
     <string name="choose_image">Choose a photo</string>
     <string name="capture_photo">Take photo</string>
     <string name="camera_unavailable">No camera app is available on this device.</string>
     <string name="camera_storage_error">Could not prepare a photo for the camera.</string>
     <string name="camera_photo_error">The camera did not save a photo. Please try again.</string>
+    <string name="leaf_photo_required">No clear potato or tomato leaf was detected. Center one leaf in the frame and try again.</string>
     <string name="crop_label">Plant type</string>
     <string name="analyze">Check leaf</string>
     <string name="pick_photo_first">Choose a leaf photo first.</string>
