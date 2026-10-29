@@ -631,7 +631,7 @@ class MainActivity : Activity() {
         private const val MIN_LEAF_BRIGHTNESS = 0.12f
         private const val MIN_LEAF_COLOR_RATIO = 0.12f
         private const val MAX_LEAF_COLOR_RATIO = 0.85f
-        private const val MIN_CENTER_LEAF_COLOR_RATIO = 0.08f
+        private const val MIN_CENTER_LEAF_COLOR_RATIO = 0.20f
         private const val MIN_LEAF_BRIGHTNESS_VARIANCE = 0.0081
         private const val MIN_CROP_CONFIDENCE = 0.25f
         private const val MIN_DISEASE_CONFIDENCE = 0.35f

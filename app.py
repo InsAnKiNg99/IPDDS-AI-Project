@@ -43,7 +43,7 @@ def has_leaf_color_distribution(image):
     leaf_color_ratio = float(leaf_colors.mean())
     return (
         0.12 <= leaf_color_ratio <= 0.85
-        and center_leaf_ratio >= 0.08
+        and center_leaf_ratio >= 0.20
         and brightness_std >= 0.09
     )
 
@@ -122,7 +122,7 @@ components.html(f"""
         
         if (revealLayer && smooth.x > -500) {{
             const maskVal = `radial-gradient(circle ${{SPOTLIGHT_R}}px at ${{smooth.x}}px ${{smooth.y}}px, black 0%, black 35%, rgba(0,0,0,0.7) 55%, rgba(0,0,0,0.25) 75%, transparent 100%)`;
-            revealLayer.style.maskImage = maskVal;
+       w     revealLayer.style.maskImage = maskVal;
             revealLayer.style.webkitMaskImage = maskVal;
         }}
         
