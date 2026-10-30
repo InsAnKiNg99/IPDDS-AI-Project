@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.Intent
+import android.graphics.Color
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
@@ -19,7 +20,6 @@ import android.widget.ProgressBar
 import android.widget.Spinner
 import android.widget.Switch
 import android.widget.TextView
-import android.widget.Toast
 import androidx.drawerlayout.widget.DrawerLayout
 import androidx.core.content.FileProvider
 import androidx.exifinterface.media.ExifInterface
@@ -46,6 +46,7 @@ class MainActivity : Activity() {
     private var classMetadata: JSONObject? = null
     private var modelReady = false
     private var pendingCameraFile: File? = null
+    private var selectedCameraFile: File? = null
     private val imageSize = 128
 
     private lateinit var drawerLayout: DrawerLayout
@@ -68,6 +69,7 @@ class MainActivity : Activity() {
     private lateinit var resultTreatment: TextView
     private lateinit var resultWarning: TextView
     private lateinit var rememberPlantSelection: Switch
+    private lateinit var capturePhotoButton: View
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,7 +84,8 @@ class MainActivity : Activity() {
         setupPlantSelection()
 
         findViewById<Button>(R.id.choose_image).setOnClickListener { chooseImage() }
-        findViewById<Button>(R.id.capture_photo).setOnClickListener { capturePhoto() }
+        capturePhotoButton = findViewById(R.id.capture_photo)
+        capturePhotoButton.setOnClickListener { capturePhoto() }
         analyzeButton.setOnClickListener { analyzeImage() }
 
         try {
@@ -312,14 +315,19 @@ class MainActivity : Activity() {
                     return
                 }
                 val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", photoFile)
-                showSelectedImage(uri, photoFile.name)
+                showSelectedImage(uri, photoFile.name, photoFile)
             }
 
             else -> return
         }
     }
 
-    private fun showSelectedImage(uri: Uri, displayName: String? = null) {
+    private fun showSelectedImage(uri: Uri, displayName: String? = null, cameraFile: File? = null) {
+        val previousCameraFile = selectedCameraFile
+        if (previousCameraFile != null && previousCameraFile != cameraFile) {
+            previousCameraFile.delete()
+        }
+        selectedCameraFile = cameraFile
         selectedImage = uri
         selectedFile.text = displayName
             ?: uri.lastPathSegment
@@ -335,12 +343,14 @@ class MainActivity : Activity() {
             try {
                 val bitmap = decodeImage(uri, PREVIEW_MAX_SIZE)
                 runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
                     preview.setImageBitmap(bitmap)
                     emptyImageHint.visibility = View.GONE
                     setBusy(false)
                 }
             } catch (error: Exception) {
                 runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
                     setBusy(false)
                     showStatus("Could not open this photo: ${error.message ?: "unsupported image"}")
                 }
@@ -366,15 +376,27 @@ class MainActivity : Activity() {
         worker.execute {
             try {
                 val bitmap = decodeImage(uri, PREVIEW_MAX_SIZE)
-                val result = diagnose(bitmap, selectedCrop)
+                val result = try {
+                    diagnose(bitmap, selectedCrop)
+                } finally {
+                    bitmap.recycle()
+                }
                 runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
                     showResult(result)
                     setBusy(false)
                 }
             } catch (error: Exception) {
                 runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
                     setBusy(false)
-                    showStatus("Could not analyze this photo: ${error.message ?: "unknown error"}")
+                    showStatus(
+                        if (error is NotLeafPhotoException) {
+                            getString(R.string.leaf_photo_required)
+                        } else {
+                            "Could not analyze this photo: ${error.message ?: "unknown error"}"
+                        }
+                    )
                 }
             }
         }
@@ -385,8 +407,15 @@ class MainActivity : Activity() {
         val cropOutput = Array(1) { FloatArray(2) }
         cropInterpreter?.run(input.duplicate().apply { rewind() }, cropOutput)
             ?: error("The crop model is not loaded.")
+        require(cropOutput[0].all { it.isFinite() && it in 0f..1f }) {
+            "The crop model returned invalid scores."
+        }
 
         val detectedCropIndex = if (cropOutput[0][1] >= TOMATO_THRESHOLD) 1 else 0
+        val cropConfidenceValue = cropOutput[0][detectedCropIndex]
+        if (selectedCrop == 0 && cropConfidenceValue < MIN_CROP_CONFIDENCE) {
+            throw UncertainLeafClassificationException()
+        }
         val detectedCrop = if (detectedCropIndex == 0) "Potato" else "Tomato"
         val cropName = when (selectedCrop) {
             1 -> "Potato"
@@ -402,6 +431,9 @@ class MainActivity : Activity() {
         val diseaseOutput = Array(1) { FloatArray(classNames.size) }
         diseaseInterpreter?.run(input.duplicate().apply { rewind() }, diseaseOutput)
             ?: error("The disease model is not loaded.")
+        require(diseaseOutput[0].all { it.isFinite() && it in 0f..1f }) {
+            "The disease model returned invalid scores."
+        }
         val allowedIndices = classNames.indices.filter { classNames[it].startsWith(cropName) }
         require(allowedIndices.isNotEmpty()) { "No disease categories were found for $cropName." }
 
@@ -409,6 +441,9 @@ class MainActivity : Activity() {
         require(allowedProbability > 0f) { "The disease model returned invalid scores." }
         val bestIndex = allowedIndices.maxBy { diseaseOutput[0][it] }
         val confidence = diseaseOutput[0][bestIndex] / allowedProbability
+        if (confidence < MIN_DISEASE_CONFIDENCE) {
+            throw UncertainLeafClassificationException()
+        }
         val rawName = classNames[bestIndex]
         val details = classMetadata?.getJSONObject(rawName)
             ?: error("Treatment details are missing for $rawName.")
@@ -430,15 +465,48 @@ class MainActivity : Activity() {
         val resized = Bitmap.createScaledBitmap(bitmap, imageSize, imageSize, true)
         val pixels = IntArray(imageSize * imageSize)
         resized.getPixels(pixels, 0, imageSize, 0, 0, imageSize, imageSize)
+        val hsv = FloatArray(3)
+        var leafColorPixels = 0
+        var centerLeafColorPixels = 0
+        var leafBrightnessSum = 0.0
+        var leafBrightnessSquaredSum = 0.0
+        val centerPixels = imageSize * imageSize / 4
         val input = ByteBuffer.allocateDirect(imageSize * imageSize * 3 * Float.SIZE_BYTES)
             .order(ByteOrder.nativeOrder())
-        pixels.forEach { color ->
+        pixels.forEachIndexed { index, color ->
+            Color.colorToHSV(color, hsv)
+            val isLeafColor = hsv[0] in MIN_LEAF_HUE..MAX_LEAF_HUE &&
+                hsv[1] >= MIN_LEAF_SATURATION &&
+                hsv[2] >= MIN_LEAF_BRIGHTNESS
+            if (isLeafColor) {
+                leafColorPixels++
+                leafBrightnessSum += hsv[2]
+                leafBrightnessSquaredSum += hsv[2] * hsv[2]
+                val x = index % imageSize
+                val y = index / imageSize
+                if (x in imageSize / 4 until imageSize * 3 / 4 &&
+                    y in imageSize / 4 until imageSize * 3 / 4
+                ) {
+                    centerLeafColorPixels++
+                }
+            }
             input.putFloat(((color shr 16) and 0xff).toFloat())
             input.putFloat(((color shr 8) and 0xff).toFloat())
             input.putFloat((color and 0xff).toFloat())
         }
         input.rewind()
         if (resized !== bitmap) resized.recycle()
+        val meanLeafBrightness = leafBrightnessSum / max(leafColorPixels, 1)
+        val leafBrightnessVariance =
+            leafBrightnessSquaredSum / max(leafColorPixels, 1) - meanLeafBrightness * meanLeafBrightness
+        val leafColorRatio = leafColorPixels.toFloat() / pixels.size
+        if (leafColorRatio < MIN_LEAF_COLOR_RATIO ||
+            leafColorRatio > MAX_LEAF_COLOR_RATIO ||
+            centerLeafColorPixels.toFloat() / centerPixels < MIN_CENTER_LEAF_COLOR_RATIO ||
+            leafBrightnessVariance < MIN_LEAF_BRIGHTNESS_VARIANCE
+        ) {
+            throw NotLeafPhotoException()
+        }
         return input
     }
 
@@ -513,13 +581,24 @@ class MainActivity : Activity() {
         progress.visibility = if (busy) View.VISIBLE else View.GONE
         analyzeButton.isEnabled = !busy && modelReady
         findViewById<Button>(R.id.choose_image).isEnabled = !busy
-        findViewById<Button>(R.id.capture_photo).isEnabled = !busy
+        capturePhotoButton.isEnabled = !busy
+        capturePhotoButton.alpha = if (busy) 0.55f else 1f
     }
 
     override fun onDestroy() {
-        worker.shutdownNow()
-        diseaseInterpreter?.close()
-        cropInterpreter?.close()
+        val diseaseModel = diseaseInterpreter
+        val cropModel = cropInterpreter
+        diseaseInterpreter = null
+        cropInterpreter = null
+        worker.execute {
+            diseaseModel?.close()
+            cropModel?.close()
+        }
+        worker.shutdown()
+        pendingCameraFile?.delete()
+        pendingCameraFile = null
+        selectedCameraFile?.delete()
+        selectedCameraFile = null
         super.onDestroy()
     }
 
@@ -533,6 +612,12 @@ class MainActivity : Activity() {
         val cropIsUncertain: Boolean
     )
 
+    private class NotLeafPhotoException : Exception()
+
+    private class UncertainLeafClassificationException : Exception(
+        "Could not confidently identify this leaf. Try a clear, close-up photo of one potato or tomato leaf."
+    )
+
     companion object {
         private const val PICK_IMAGE_REQUEST = 1001
         private const val CAMERA_REQUEST = 1002
@@ -540,6 +625,16 @@ class MainActivity : Activity() {
         private const val PREVIEW_MAX_SIZE = 1024
         private const val TOMATO_THRESHOLD = 0.7f
         private const val CROP_WARNING_THRESHOLD = 0.7f
+        private const val MIN_LEAF_HUE = 35f
+        private const val MAX_LEAF_HUE = 155f
+        private const val MIN_LEAF_SATURATION = 0.14f
+        private const val MIN_LEAF_BRIGHTNESS = 0.12f
+        private const val MIN_LEAF_COLOR_RATIO = 0.12f
+        private const val MAX_LEAF_COLOR_RATIO = 0.85f
+        private const val MIN_CENTER_LEAF_COLOR_RATIO = 0.20f
+        private const val MIN_LEAF_BRIGHTNESS_VARIANCE = 0.0081
+        private const val MIN_CROP_CONFIDENCE = 0.25f
+        private const val MIN_DISEASE_CONFIDENCE = 0.35f
         private const val SETTINGS_PREFERENCES = "ipdds_settings"
         private const val KEY_REMEMBER_PLANT_SELECTION = "remember_plant_selection"
         private const val KEY_LAST_PLANT_SELECTION = "last_plant_selection"

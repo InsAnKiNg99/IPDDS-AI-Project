@@ -27,6 +27,27 @@ def get_base64_data_uri(image_path, fallback_url):
             pass
     return fallback_url
 
+def has_leaf_color_distribution(image):
+    hsv = np.asarray(image.resize((128, 128)).convert("HSV"), dtype=np.uint8)
+    hue = hsv[:, :, 0].astype(np.float32) * (360.0 / 255.0)
+    saturation = hsv[:, :, 1].astype(np.float32) / 255.0
+    brightness = hsv[:, :, 2].astype(np.float32) / 255.0
+    leaf_colors = (
+        (hue >= 35.0)
+        & (hue <= 155.0)
+        & (saturation >= 0.14)
+        & (brightness >= 0.12)
+    )
+    center_leaf_ratio = float(leaf_colors[32:96, 32:96].mean())
+    leaf_brightness = brightness[leaf_colors]
+    brightness_std = float(leaf_brightness.std()) if leaf_brightness.size else 0.0
+    leaf_color_ratio = float(leaf_colors.mean())
+    return (
+        0.12 <= leaf_color_ratio <= 0.85
+        and center_leaf_ratio >= 0.20
+        and brightness_std >= 0.09
+    )
+
 FALLBACK_BASE_URL = "https://images.higgs.ai/?default=1&output=webp&url=https%3A%2F%2Fd8j0ntlcm91z4.cloudfront.net%2Fuser_38xzZboKViGWJOttwIXH07lWA1P%2Fhf_20260609_201152_bba90a12-bf12-459f-91f0-51f237dbaf3b.png&w=1920&q=85"
 FALLBACK_DISEASED_URL = "https://images.higgs.ai/?default=1&output=webp&url=https%3A%2F%2Fd8j0ntlcm91z4.cloudfront.net%2Fuser_38xzZboKViGWJOttwIXH07lWA1P%2Fhf_20260609_195923_b0ba8ace-1d1d-4f2c-9a28-1ab84b330680.png&w=1920&q=85"
 
@@ -102,7 +123,7 @@ components.html(f"""
         
         if (revealLayer && smooth.x > -500) {{
             const maskVal = `radial-gradient(circle ${{SPOTLIGHT_R}}px at ${{smooth.x}}px ${{smooth.y}}px, black 0%, black 35%, rgba(0,0,0,0.7) 55%, rgba(0,0,0,0.25) 75%, transparent 100%)`;
-            revealLayer.style.maskImage = maskVal;
+       w     revealLayer.style.maskImage = maskVal;
             revealLayer.style.webkitMaskImage = maskVal;
         }}
         
@@ -840,6 +861,7 @@ with col_c1:
 
 
 pred_data = None
+ main
 inference_error = None
 
 if eval_image is not None and is_valid_specimen and model is not None:
@@ -871,6 +893,21 @@ if eval_image is not None and is_valid_specimen and model is not None:
         crop_name = detected_crop if crop_override == "Auto-detect" else crop_override.split(" ", 1)[0]
         if crop_override != "Auto-detect":
             crop_confidence = None
+
+leaf_photo_rejected = eval_image is not None and not has_leaf_color_distribution(eval_image)
+if eval_image is not None and model is not None and not leaf_photo_rejected:
+    img_resized = eval_image.resize(target_img_size)
+    img_array = np.array(img_resized, dtype=np.float32)
+    img_array = np.expand_dims(img_array, axis=0)
+
+    preds = model.predict(img_array, verbose=0)[0]
+    if crop_model is not None:
+        crop_preds = crop_model.predict(img_array, verbose=0)[0]
+        crop_idx = 1 if crop_preds[1] >= TOMATO_CROP_CONFIDENCE_THRESHOLD else 0
+        detected_crop = ("Potato", "Tomato")[crop_idx]
+        crop_confidence = float(crop_preds[crop_idx]) * 100
+    else:
+ main
         crop_class_indices = [
             index for index, class_name in enumerate(class_names)
             if class_name.startswith(crop_name)
@@ -908,6 +945,17 @@ if eval_image is not None and is_valid_specimen and model is not None:
 
 
 with col_c2:
+ main
+
+    if leaf_photo_rejected:
+        st.warning("No clear potato or tomato leaf was detected. Center one leaf in the photo and try again.")
+    if (
+        pred_data is not None
+        and pred_data["crop_selection"] == "Auto-detect"
+        and pred_data["crop_confidence"] < 70
+    ):
+        st.warning("Crop identification is uncertain. Confirm Potato or Tomato using the selector before relying on the disease result.")
+ main
     st.markdown("""
     <div class="card-top-row">
         <div class="card-icon-square">
@@ -924,10 +972,24 @@ with col_c2:
     </div>
     """, unsafe_allow_html=True)
     
+ main
     if inference_error:
         st.error(inference_error)
 
     if pred_data is None:
+
+    if pred_data is None and leaf_photo_rejected:
+        st.markdown("""
+        <div style="text-align: center; padding: 2.5rem 0.5rem; opacity: 0.85;">
+            <div style="font-size: 2.2rem; margin-bottom: 0.4rem;">🍃</div>
+            <div style="font-size: 0.95rem; font-weight: 500;">Leaf photo needed</div>
+            <div style="font-size: 0.78rem; color: rgba(255,255,255,0.65); margin-top: 0.2rem;">
+                Center one potato or tomato leaf and fill most of the frame.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    elif pred_data is None:
+ main
         st.markdown("""
         <div style="text-align: center; padding: 3.2rem 1rem; opacity: 0.72;">
             <div style="font-size: 2.5rem; margin-bottom: 0.4rem;">🍃</div>
