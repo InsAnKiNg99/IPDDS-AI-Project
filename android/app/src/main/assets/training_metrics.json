@@ -1,0 +1,31 @@
+{
+  "validation_split": "stratified 80/20 per class after exact-file deduplication",
+  "training_images": 14520,
+  "validation_images": 3629,
+  "duplicate_images_removed": 14539,
+  "training_datasets": [
+    "moazeldsokyx/plantvillage",
+    "emmarex/plantdisease"
+  ],
+  "disease_accuracy": 0.8613943457603455,
+  "crop_accuracy": 0.980986475944519,
+  "crop_classes": [
+    "Potato",
+    "Tomato"
+  ],
+  "class_validation_counts": {
+    "Potato___Early_blight": 200,
+    "Potato___Late_blight": 200,
+    "Potato___healthy": 30,
+    "Tomato_Bacterial_spot": 425,
+    "Tomato_Early_blight": 200,
+    "Tomato_Late_blight": 380,
+    "Tomato_Leaf_Mold": 190,
+    "Tomato_Septoria_leaf_spot": 354,
+    "Tomato_Spider_mites_Two_spotted_spider_mite": 335,
+    "Tomato__Target_Spot": 281,
+    "Tomato__Tomato_YellowLeaf__Curl_Virus": 642,
+    "Tomato__Tomato_mosaic_virus": 75,
+    "Tomato_healthy": 317
+  }
+}

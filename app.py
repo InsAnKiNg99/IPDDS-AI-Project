@@ -4,12 +4,12 @@ import base64
 import streamlit as st
 import streamlit.components.v1 as components
 import tensorflow as tf
-from PIL import Image
+from PIL import Image, ImageOps
 import numpy as np
 
 
 st.set_page_config(
-    page_title="IPDDS | Plant Disease Detection System",
+    page_title="IPDDS 1.1 | Plant Disease Detection System",
     page_icon="🌿",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -27,7 +27,12 @@ def get_base64_data_uri(image_path, fallback_url):
     return fallback_url
 
 def has_leaf_color_distribution(image):
-    hsv = np.asarray(image.resize((128, 128)).convert("HSV"), dtype=np.uint8)
+    rgb = np.asarray(image.convert("RGB"), dtype=np.float32)
+    resized_rgb = tf.image.resize(rgb, (128, 128), method="bilinear", antialias=False).numpy()
+    hsv = np.asarray(
+        Image.fromarray(np.clip(np.rint(resized_rgb), 0, 255).astype(np.uint8)).convert("HSV"),
+        dtype=np.uint8
+    )
     hue = hsv[:, :, 0].astype(np.float32) * (360.0 / 255.0)
     saturation = hsv[:, :, 1].astype(np.float32) / 255.0
     brightness = hsv[:, :, 2].astype(np.float32) / 255.0
@@ -42,7 +47,7 @@ def has_leaf_color_distribution(image):
     brightness_std = float(leaf_brightness.std()) if leaf_brightness.size else 0.0
     leaf_color_ratio = float(leaf_colors.mean())
     return (
-        0.12 <= leaf_color_ratio <= 0.85
+        0.12 <= leaf_color_ratio <= 0.98
         and center_leaf_ratio >= 0.20
         and brightness_std >= 0.09
     )
@@ -486,22 +491,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-DEFAULT_CLASSES = [
-    "Potato___Early_blight",
-    "Potato___Late_blight",
-    "Potato___healthy",
-    "Tomato___Bacterial_spot",
-    "Tomato___Early_blight",
-    "Tomato___healthy",
-    "Tomato___Late_blight",
-    "Tomato___Leaf_Mold",
-    "Tomato___Septoria_leaf_spot",
-    "Tomato___Spider_mites Two-spotted_spider_mite",
-    "Tomato___Target_Spot",
-    "Tomato___Tomato_mosaic_virus",
-    "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
-]
-
 def resolve_trained_model_path():
     model_paths = [
         os.path.join("model", "disease_model.keras"),
@@ -526,15 +515,33 @@ def load_crop_model(model_path, model_modified_ns):
 
 def load_metadata():
     json_path = os.path.join("model", "class_indices.json")
-    if os.path.exists(json_path):
-        try:
-            with open(json_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                img_size = tuple(data.get("image_size", [128, 128]))
-                return data.get("class_names", DEFAULT_CLASSES), data.get("classes", {}), img_size
-        except Exception:
-            pass
-    return DEFAULT_CLASSES, {}, (128, 128)
+    with open(json_path, "r", encoding="utf-8") as metadata_file:
+        data = json.load(metadata_file)
+    if not isinstance(data, dict):
+        raise ValueError("model/class_indices.json must contain a JSON object.")
+    names = data.get("class_names")
+    classes = data.get("classes")
+    img_size = data.get("image_size")
+    if (
+        not isinstance(names, list)
+        or len(names) != 13
+        or not all(isinstance(name, str) and name for name in names)
+        or len(set(names)) != len(names)
+    ):
+        raise ValueError("model/class_indices.json must define 13 unique disease labels.")
+    if (
+        not isinstance(classes, dict)
+        or set(classes) != set(names)
+        or not all(isinstance(details, dict) for details in classes.values())
+    ):
+        raise ValueError("model/class_indices.json disease metadata does not match its labels.")
+    if (
+        not isinstance(img_size, list)
+        or len(img_size) != 2
+        or not all(type(dimension) is int and dimension > 0 for dimension in img_size)
+    ):
+        raise ValueError("model/class_indices.json has an invalid image size.")
+    return names, classes, tuple(img_size)
 
 class_names, metadata_map, target_img_size = load_metadata()
 model_path = resolve_trained_model_path()
@@ -543,15 +550,39 @@ model, loaded_path = load_trained_model(model_path, model_modified_ns)
 crop_model_path = os.path.join("model", "crop_type_model.keras")
 crop_model_modified_ns = os.stat(crop_model_path).st_mtime_ns if os.path.exists(crop_model_path) else 0
 crop_model = load_crop_model(crop_model_path if crop_model_modified_ns else None, crop_model_modified_ns)
+with open(os.path.join("model", "training_metrics.json"), "r", encoding="utf-8") as metrics_file:
+    training_metrics = json.load(metrics_file)
+crop_classes = training_metrics.get("crop_classes") if isinstance(training_metrics, dict) else None
+if crop_classes != ["Potato", "Tomato"]:
+    raise ValueError("model/training_metrics.json must map crop model outputs to Potato, then Tomato.")
+training_datasets = training_metrics.get("training_datasets", [])
+if not isinstance(training_datasets, list) or not all(
+    isinstance(source, str) and source for source in training_datasets
+):
+    raise ValueError("model/training_metrics.json has an invalid training_datasets list.")
+dataset_summary = (
+    f"{len(training_datasets)} PlantVillage sources"
+    if training_datasets
+    else "PlantVillage · v1.1"
+)
 if model is not None and model.output_shape[-1] != len(class_names):
     raise ValueError("The disease model output count does not match model/class_indices.json.")
 if crop_model is not None and crop_model.output_shape[-1] != 2:
     raise ValueError("The crop model must output Potato and Tomato probabilities.")
+if model is None or crop_model is None:
+    st.error("The disease and crop models must both be available before IPDDS can analyze a photo.")
+    st.stop()
+for metric_name in ("disease_accuracy", "crop_accuracy"):
+    metric_value = training_metrics.get(metric_name)
+    if not isinstance(metric_value, (int, float)) or not np.isfinite(metric_value) or not 0 <= metric_value <= 1:
+        raise ValueError(f"model/training_metrics.json has an invalid {metric_name} value.")
 
-TOMATO_CROP_CONFIDENCE_THRESHOLD = 0.8
+MIN_CROP_CONFIDENCE = 0.70
+CROP_WARNING_THRESHOLD = 0.85
+MIN_DISEASE_CONFIDENCE = 0.35
 
 
-st.markdown("""
+st.markdown(f"""
 <div class="top-nav">
     <div class="nav-brand">
         <div class="nav-logo-icon font-playfair">IP</div>
@@ -562,10 +593,10 @@ st.markdown("""
         <span style="opacity: 0.3;">·</span>
         <span>13 Disease Classes</span>
         <span style="opacity: 0.3;">·</span>
-        <span>Neural Inference</span>
+        <span>{dataset_summary}</span>
     </div>
     <div class="cta-pill-white">
-        <span>Active Model · 92% Acc</span>
+        <span>Held-out disease accuracy · {training_metrics["disease_accuracy"] * 100:.1f}%</span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7"/><path d="M7 7h10v10"/></svg>
     </div>
 </div>
@@ -574,7 +605,7 @@ st.markdown("""
 
 st.markdown("""
 <div class="hero-container">
-    <div class="hero-kicker">Intelligent Plant Disease Detection System</div>
+    <div class="hero-kicker">Intelligent Plant Disease Detection System · Version 1.1</div>
     <h1 class="hero-title">
         <span class="font-playfair italic">AI Pathology</span> for Potato & Tomato Crops
     </h1>
@@ -616,12 +647,6 @@ with col_c1:
         label_visibility="collapsed",
         key="leaf_uploader"
     )
-    crop_override = st.selectbox(
-        "Crop identification",
-        ["Auto-detect", "Potato (manual)", "Tomato (manual)"],
-        help="Auto-detect uses the trained crop model. Select a crop manually if the automatic result is incorrect."
-    )
-    
     st.markdown("<div style='font-size: 0.85rem; font-weight: 500; margin: 0.6rem 0 0.35rem 0;'>Or Select Benchmark Leaf</div>", unsafe_allow_html=True)
     b_col1, b_col2 = st.columns(2)
     with b_col1:
@@ -643,10 +668,10 @@ with col_c1:
     eval_image = None
     source_name = None
     if uploaded_file is not None:
-        eval_image = Image.open(uploaded_file).convert("RGB")
+        eval_image = ImageOps.exif_transpose(Image.open(uploaded_file)).convert("RGB")
         source_name = uploaded_file.name
     elif st.session_state.selected_sample and os.path.exists(st.session_state.selected_sample):
-        eval_image = Image.open(st.session_state.selected_sample).convert("RGB")
+        eval_image = ImageOps.exif_transpose(Image.open(st.session_state.selected_sample)).convert("RGB")
         source_name = st.session_state.selected_label or os.path.basename(st.session_state.selected_sample)
 
     if eval_image is not None:
@@ -669,84 +694,89 @@ with col_c1:
 
 pred_data = None
 leaf_photo_rejected = eval_image is not None and not has_leaf_color_distribution(eval_image)
+crop_estimate_uncertain = False
+disease_estimate_uncertain = False
 if eval_image is not None and model is not None and not leaf_photo_rejected:
-    img_resized = eval_image.resize(target_img_size)
-    img_array = np.array(img_resized, dtype=np.float32)
-    img_array = np.expand_dims(img_array, axis=0)
+    img_array = tf.image.resize(
+        np.asarray(eval_image.convert("RGB"), dtype=np.float32),
+        target_img_size,
+        method="bilinear",
+        antialias=False
+    ).numpy()[None, ...]
 
-    preds = model.predict(img_array, verbose=0)[0]
-    if crop_model is not None:
-        crop_preds = crop_model.predict(img_array, verbose=0)[0]
-        crop_idx = 1 if crop_preds[1] >= TOMATO_CROP_CONFIDENCE_THRESHOLD else 0
-        detected_crop = ("Potato", "Tomato")[crop_idx]
-        crop_confidence = float(crop_preds[crop_idx]) * 100
-    else:
+    crop_preds = crop_model.predict(img_array, verbose=0)[0]
+    if (
+        crop_preds.shape != (2,)
+        or not np.all(np.isfinite(crop_preds))
+        or np.any((crop_preds < 0) | (crop_preds > 1))
+        or not np.isclose(np.sum(crop_preds), 1.0, atol=0.01)
+    ):
+        raise ValueError("The crop model returned invalid probabilities.")
+    crop_idx = int(np.argmax(crop_preds))
+    crop_name = crop_classes[crop_idx]
+    crop_confidence = float(crop_preds[crop_idx]) * 100
+    crop_estimate_uncertain = crop_confidence < MIN_CROP_CONFIDENCE * 100
+
+    if not crop_estimate_uncertain:
+        preds = model.predict(img_array, verbose=0)[0]
+        if (
+            preds.shape != (len(class_names),)
+            or not np.all(np.isfinite(preds))
+            or np.any((preds < 0) | (preds > 1))
+            or not np.isclose(np.sum(preds), 1.0, atol=0.01)
+        ):
+            raise ValueError("The disease model returned invalid probabilities.")
         crop_class_indices = [
             index for index, class_name in enumerate(class_names)
-            if class_name.startswith("Potato")
+            if class_name.startswith(crop_name)
         ]
-        tomato_class_indices = [
-            index for index, class_name in enumerate(class_names)
-            if class_name.startswith("Tomato")
-        ]
-        potato_probability = float(np.sum(preds[crop_class_indices]))
-        tomato_probability = float(np.sum(preds[tomato_class_indices]))
-        detected_crop = "Potato" if potato_probability >= tomato_probability else "Tomato"
-        crop_confidence = max(potato_probability, tomato_probability) * 100
+        if not crop_class_indices:
+            raise ValueError(f"No disease classes are configured for estimated crop: {crop_name}")
+        crop_probability = float(np.sum(preds[crop_class_indices]))
+        if crop_probability <= 0:
+            raise ValueError(f"The disease model returned no probability for estimated crop: {crop_name}")
+        crop_specific_preds = np.zeros_like(preds)
+        crop_specific_preds[crop_class_indices] = preds[crop_class_indices] / crop_probability
+        preds = crop_specific_preds
 
-    crop_name = detected_crop if crop_override == "Auto-detect" else crop_override.split(" ", 1)[0]
-    if crop_override != "Auto-detect":
-        crop_confidence = None
-    crop_class_indices = [
-        index for index, class_name in enumerate(class_names)
-        if class_name.startswith(crop_name)
-    ]
-    if not crop_class_indices:
-        raise ValueError(f"No disease classes are configured for selected crop: {crop_name}")
-    crop_probability = float(np.sum(preds[crop_class_indices]))
-    if crop_probability <= 0:
-        raise ValueError(f"The disease model returned no probability for selected crop: {crop_name}")
-    crop_specific_preds = np.zeros_like(preds)
-    crop_specific_preds[crop_class_indices] = preds[crop_class_indices] / crop_probability
-    preds = crop_specific_preds
+        pred_idx = int(np.argmax(preds))
+        confidence = float(preds[pred_idx]) * 100
+        raw_class = class_names[pred_idx]
+        disease_estimate_uncertain = confidence < MIN_DISEASE_CONFIDENCE * 100
 
-    pred_idx = int(np.argmax(preds))
-    confidence = float(preds[pred_idx]) * 100
-    raw_class = class_names[pred_idx] if pred_idx < len(class_names) else "Unknown"
-
-    info = metadata_map.get(raw_class)
-    if info is None or not info.get("recommendation"):
-        raise KeyError(f"Missing disease and treatment metadata for predicted class: {raw_class}")
-    info = {**info, "crop": crop_name}
-    pred_data = {
-        "raw_class": raw_class,
-        "info": info,
-        "confidence": confidence,
-        "crop_confidence": crop_confidence,
-        "crop_selection": crop_override,
-        "preds": preds
-    }
+        if not disease_estimate_uncertain:
+            info = metadata_map.get(raw_class)
+            if info is None or not info.get("recommendation"):
+                raise KeyError(f"Missing disease and treatment metadata for predicted class: {raw_class}")
+            info = {**info, "crop": crop_name}
+            pred_data = {
+                "raw_class": raw_class,
+                "info": info,
+                "confidence": confidence,
+                "crop_confidence": crop_confidence,
+                "preds": preds
+            }
 
 
 with col_c2:
     if leaf_photo_rejected:
         st.warning("No clear potato or tomato leaf was detected. Center one leaf in the photo and try again.")
-    if (
-        pred_data is not None
-        and pred_data["crop_selection"] == "Auto-detect"
-        and pred_data["crop_confidence"] < 70
-    ):
-        st.warning("Crop identification is uncertain. Confirm Potato or Tomato using the selector before relying on the disease result.")
-    st.markdown("""
+    elif crop_estimate_uncertain:
+        st.warning("The crop estimate is uncertain. Try a clear close-up photo with one leaf centered in the frame.")
+    elif disease_estimate_uncertain:
+        st.warning("The disease estimate is uncertain. Try another clear, close-up photo before relying on care guidance.")
+    elif pred_data is not None and pred_data["crop_confidence"] < CROP_WARNING_THRESHOLD * 100:
+        st.warning("The crop estimate is less certain. Verify the plant type before relying on care guidance.")
+    st.markdown(f"""
     <div class="card-top-row">
         <div class="card-icon-square">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/></svg>
         </div>
         <div class="tags-cloud">
-            <span class="pill-tag">92% Acc</span>
-            <span class="pill-tag">&lt;150ms</span>
-            <span class="pill-tag">Real-Time</span>
-            <span class="pill-tag">CNN</span>
+            <span class="pill-tag">Disease {training_metrics["disease_accuracy"] * 100:.1f}%</span>
+            <span class="pill-tag">Crop {training_metrics["crop_accuracy"] * 100:.1f}%</span>
+            <span class="pill-tag">13 classes</span>
+            <span class="pill-tag">Offline model</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -758,6 +788,26 @@ with col_c2:
             <div style="font-size: 0.95rem; font-weight: 500;">Leaf photo needed</div>
             <div style="font-size: 0.78rem; color: rgba(255,255,255,0.65); margin-top: 0.2rem;">
                 Center one potato or tomato leaf and fill most of the frame.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    elif pred_data is None and crop_estimate_uncertain:
+        st.markdown("""
+        <div style="text-align: center; padding: 2.5rem 0.5rem; opacity: 0.85;">
+            <div style="font-size: 2.2rem; margin-bottom: 0.4rem;">🍃</div>
+            <div style="font-size: 0.95rem; font-weight: 500;">Crop estimate needed</div>
+            <div style="font-size: 0.78rem; color: rgba(255,255,255,0.65); margin-top: 0.2rem;">
+                Center one potato or tomato leaf and try another photo.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    elif pred_data is None and disease_estimate_uncertain:
+        st.markdown("""
+        <div style="text-align: center; padding: 2.5rem 0.5rem; opacity: 0.85;">
+            <div style="font-size: 2.2rem; margin-bottom: 0.4rem;">🍃</div>
+            <div style="font-size: 0.95rem; font-weight: 500;">Disease estimate needed</div>
+            <div style="font-size: 0.78rem; color: rgba(255,255,255,0.65); margin-top: 0.2rem;">
+                Try a clear, close-up photo of one leaf.
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -791,7 +841,7 @@ with col_c2:
             <div class="conf-bar-fill" style="width: {min(100.0, conf):.1f}%;"></div>
         </div>
         <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6); margin-top: 0.35rem;">
-            Crop: <strong style="color: #ffffff;">{info["crop"]}{f" ({pred_data['crop_confidence']:.1f}% confidence)" if pred_data["crop_confidence"] is not None else " (manual selection)"}</strong> · Model Input: 128×128 RGB
+            Estimated crop: <strong style="color: #ffffff;">{info["crop"]} ({pred_data['crop_confidence']:.1f}% confidence)</strong> · Model input: 128×128 RGB
         </div>
         """, unsafe_allow_html=True)
         

@@ -93,6 +93,7 @@
                     android:textStyle="bold" />
 
                 <TextView
+                    android:id="@+id/about_model_accuracy"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:background="@drawable/crop_hint_badge"
@@ -183,6 +184,7 @@
                 android:background="@color/model_info_divider" />
 
             <TextView
+                android:id="@+id/about_model_details"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
