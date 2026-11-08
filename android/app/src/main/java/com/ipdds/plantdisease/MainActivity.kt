@@ -444,7 +444,59 @@ class MainActivity : Activity() {
                 if (view !== bitmap) view.recycle()
             }
         }
-        return diagnosisFromVotes(votes)
+        return correctCleanCanopy(bitmap, diagnosisFromVotes(votes))
+    }
+
+    private fun necroticFraction(bitmap: Bitmap): Float {
+        val longest = max(bitmap.width, bitmap.height)
+        val sample = if (longest > 480) {
+            val scale = 480f / longest
+            Bitmap.createScaledBitmap(
+                bitmap,
+                max(1, (bitmap.width * scale).roundToInt()),
+                max(1, (bitmap.height * scale).roundToInt()),
+                true
+            )
+        } else {
+            bitmap
+        }
+        var spotPixels = 0
+        var greenPixels = 0
+        for (y in 0 until sample.height) {
+            for (x in 0 until sample.width) {
+                val color = sample.getPixel(x, y)
+                val red = Color.red(color)
+                val green = Color.green(color)
+                val blue = Color.blue(color)
+                val spot = red > green + 12 && red > blue && red > 35 && green < 180
+                val foliage = green > red + 8 && green > blue && green > 40
+                if (spot) spotPixels++
+                if (foliage) greenPixels++
+            }
+        }
+        if (sample !== bitmap) sample.recycle()
+        if (greenPixels < 50) return 1f
+        return spotPixels.toFloat() / greenPixels
+    }
+
+    private fun correctCleanCanopy(bitmap: Bitmap, result: Diagnosis): Diagnosis {
+        if (result.disease.contains("Healthy", ignoreCase = true)) return result
+        if (!result.disease.contains("Late Blight", ignoreCase = true)) return result
+        if (necroticFraction(bitmap) >= 0.02f) return result
+        val healthyName = classNames.firstOrNull {
+            it.startsWith(result.crop) && it.contains("healthy", ignoreCase = true)
+        } ?: return result
+        val details = classMetadata?.getJSONObject(healthyName) ?: return result
+        val recommendation = details.optString("recommendation")
+        if (recommendation.isBlank()) return result
+        return result.copy(
+            disease = details.getString("display_name"),
+            confidence = 0.78f,
+            pathogen = details.optString("pathogen", "None"),
+            treatment = recommendation,
+            leavesDisagree = false,
+            cleanCanopy = true
+        )
     }
 
     private fun plantViews(bitmap: Bitmap): List<Bitmap> {
@@ -705,9 +757,14 @@ class MainActivity : Activity() {
         resultConfidence.text = getString(R.string.result_disease_confidence, percent(result.confidence))
         resultPathogen.text = result.pathogen
         resultTreatment.text = result.treatment
-        resultWarning.visibility = if (result.cropIsUncertain || result.leavesDisagree) View.VISIBLE else View.GONE
-        if (result.leavesDisagree) resultWarning.text = getString(R.string.leaves_disagree)
-        else if (result.cropIsUncertain) resultWarning.text = getString(R.string.low_confidence)
+        resultWarning.visibility = if (
+            result.cleanCanopy || result.cropIsUncertain || result.leavesDisagree
+        ) View.VISIBLE else View.GONE
+        when {
+            result.cleanCanopy -> resultWarning.text = getString(R.string.clean_canopy)
+            result.leavesDisagree -> resultWarning.text = getString(R.string.leaves_disagree)
+            result.cropIsUncertain -> resultWarning.text = getString(R.string.low_confidence)
+        }
         resultPanel.visibility = View.VISIBLE
         status.visibility = View.GONE
     }
@@ -752,7 +809,8 @@ class MainActivity : Activity() {
         val pathogen: String,
         val treatment: String,
         val cropIsUncertain: Boolean,
-        val leavesDisagree: Boolean
+        val leavesDisagree: Boolean,
+        val cleanCanopy: Boolean = false
     )
 
     private data class PatchVote(

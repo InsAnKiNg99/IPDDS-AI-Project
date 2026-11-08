@@ -42,6 +42,7 @@
     <string name="crop_estimate_uncertain">Could not confidently estimate the crop. Center one clear leaf and try another photo.</string>
     <string name="disease_estimate_uncertain">The disease estimate is uncertain. Try another clear, close-up photo before relying on care guidance.</string>
     <string name="leaves_disagree">Leaves in this photo do not all agree. The strongest reading is shown. Check one leaf up close before you act.</string>
+    <string name="clean_canopy">No brown or black spotting was visible, so this plant is read as healthy.</string>
     <string name="result_crop_confidence">Crop: %1$s (%2$s confidence)</string>
     <string name="result_disease_confidence">Disease confidence: %1$s</string>
 </resources>

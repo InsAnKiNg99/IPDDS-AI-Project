@@ -939,6 +939,40 @@ def diagnose_plant_views(crop_preds, disease_preds, class_names, crop_classes):
         "preds": averaged,
     }
 
+def brown_spot_fraction(image):
+    """Brown pixels compared with green pixels. Shadows stay green and are not spots."""
+    rgb = np.asarray(limit_photo_size(image, 640).convert("RGB")).astype(np.int16)
+    red, green, blue = rgb[:, :, 0], rgb[:, :, 1], rgb[:, :, 2]
+    spots = (red > green + 12) & (red > blue) & (red > 35) & (green < 180)
+    foliage = (green > red + 8) & (green > blue) & (green > 40)
+    foliage_pixels = int(foliage.sum())
+    if foliage_pixels < 50:
+        return 1.0
+    return float(spots.sum()) / foliage_pixels
+
+def correct_clean_canopy(image, diagnosis, class_names):
+    """Late blight on a green canopy with no brown spots is a false alarm."""
+    if not diagnosis or diagnosis.get("uncertain_crop"):
+        return diagnosis
+    raw_class = diagnosis.get("raw_class", "")
+    if "healthy" in raw_class.lower() or "Late_blight" not in raw_class:
+        return diagnosis
+    if brown_spot_fraction(image) >= 0.02:
+        return diagnosis
+    healthy_name = next(
+        name for name in class_names
+        if name.startswith(diagnosis["crop_name"]) and "healthy" in name.lower()
+    )
+    corrected = dict(diagnosis)
+    corrected["raw_class"] = healthy_name
+    corrected["confidence"] = 78.0
+    corrected["uncertain"] = False
+    corrected["clean_canopy"] = True
+    averaged = np.zeros(len(class_names), dtype=np.float32)
+    averaged[class_names.index(healthy_name)] = 0.78
+    corrected["preds"] = averaged
+    return corrected
+
 class_names, metadata_map, target_img_size = load_metadata()
 model_path = resolve_trained_model_path()
 model_modified_ns = os.stat(model_path).st_mtime_ns if model_path else 0
@@ -1117,6 +1151,7 @@ if eval_image is not None and is_valid_specimen and model is not None and crop_m
         crop_preds = crop_model.predict(view_batch, verbose=0)
         disease_preds = model.predict(view_batch, verbose=0)
         diagnosis = diagnose_plant_views(crop_preds, disease_preds, class_names, crop_classes)
+        diagnosis = correct_clean_canopy(eval_image, diagnosis, class_names)
         if diagnosis is None:
             raise ValueError("The photo did not produce a usable leaf reading.")
         crop_estimate_uncertain = diagnosis.get("uncertain_crop", False)
@@ -1136,7 +1171,8 @@ if eval_image is not None and is_valid_specimen and model is not None and crop_m
                     "crop_confidence": diagnosis["crop_confidence"],
                     "preds": diagnosis["preds"],
                     "views": diagnosis["views"],
-                    "leaves_disagree": leaves_disagree,
+                    "leaves_disagree": leaves_disagree and not diagnosis.get("clean_canopy"),
+                    "clean_canopy": bool(diagnosis.get("clean_canopy")),
                 }
     except Exception as error:
         inference_error = f"Could not read this photo: {error}"
@@ -1167,6 +1203,8 @@ with col_c2:
         st.warning("The crop is unclear. Use a photo with one leaf in the middle of the frame.")
     elif disease_estimate_uncertain:
         st.warning("The disease call is too uncertain to trust. Try another clear photo.")
+    elif pred_data is not None and pred_data.get("clean_canopy"):
+        st.info("No brown or black spotting was visible, so this plant is read as healthy.")
     elif pred_data is not None and pred_data.get("leaves_disagree"):
         st.warning("Leaves in this photo do not all agree. The strongest reading is shown. Check one leaf up close before you act.")
     elif pred_data is not None and pred_data["crop_confidence"] < CROP_WARNING_THRESHOLD * 100:
