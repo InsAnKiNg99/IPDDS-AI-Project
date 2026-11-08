@@ -138,7 +138,7 @@ components.html(f"""
         smooth.x += (mouse.x - smooth.x) * 0.12;
         smooth.y += (mouse.y - smooth.y) * 0.12;
         
-        if (revealLayer && smooth.x > -500) {{
+        if (revealLayer && smooth.x > -500 && !doc.body.classList.contains('ipdds-enter')) {{
             const maskVal = `radial-gradient(circle ${{SPOTLIGHT_R}}px at ${{smooth.x}}px ${{smooth.y}}px, black 0%, black 35%, rgba(0,0,0,0.7) 55%, rgba(0,0,0,0.25) 75%, transparent 100%)`;
             revealLayer.style.maskImage = maskVal;
             revealLayer.style.webkitMaskImage = maskVal;
@@ -150,6 +150,22 @@ components.html(f"""
     if (!doc._ipddsLoopRunning) {{
         doc._ipddsLoopRunning = true;
         requestAnimationFrame(loop);
+    }}
+
+    const root = doc.documentElement;
+    if (root.dataset.ipddsEntered === '1') {{
+        doc.body.classList.add('ipdds-settled');
+    }} else if (root.dataset.ipddsEntered !== 'pending') {{
+        root.dataset.ipddsEntered = 'pending';
+        doc.body.classList.remove('ipdds-settled');
+        window.setTimeout(() => {{
+            doc.body.classList.add('ipdds-enter');
+            window.setTimeout(() => {{
+                doc.body.classList.remove('ipdds-enter');
+                doc.body.classList.add('ipdds-settled');
+                root.dataset.ipddsEntered = '1';
+            }}, 1800);
+        }}, 3500);
     }}
 }})();
 </script>
@@ -629,6 +645,81 @@ st.markdown("""
 
     [data-testid="stAlert"] {
         border-radius: 12px !important;
+    }
+
+    @keyframes ipdds-from-top {
+        from { opacity: 0; transform: translate3d(0, -84px, 0); }
+        to { opacity: 1; transform: translate3d(0, 0, 0); }
+    }
+    @keyframes ipdds-from-bottom {
+        from { opacity: 0; transform: translate3d(0, 72px, 0); }
+        to { opacity: 1; transform: translate3d(0, 0, 0); }
+    }
+    @keyframes ipdds-from-left {
+        from { opacity: 0; transform: translate3d(-96px, 0, 0); }
+        to { opacity: 1; transform: translate3d(0, 0, 0); }
+    }
+    @keyframes ipdds-from-right {
+        from { opacity: 0; transform: translate3d(96px, 0, 0); }
+        to { opacity: 1; transform: translate3d(0, 0, 0); }
+    }
+
+    body:not(.ipdds-settled) .top-nav,
+    body:not(.ipdds-settled) .hero-container,
+    body:not(.ipdds-settled) [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    body:not(.ipdds-settled) [data-testid="stColumn"] [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        opacity: 1;
+        pointer-events: auto;
+        transform: none;
+        animation: none;
+    }
+
+    body.ipdds-enter [data-testid="stColumn"] [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        animation: none;
+        opacity: 1;
+        transform: none;
+    }
+
+    body.ipdds-enter .top-nav,
+    body.ipdds-enter .hero-container,
+    body.ipdds-enter [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        will-change: transform, opacity;
+        backface-visibility: hidden;
+    }
+
+    body.ipdds-enter [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+    }
+
+    body.ipdds-enter .top-nav {
+        animation: ipdds-from-top 1.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+
+    body.ipdds-enter .hero-container {
+        animation: ipdds-from-bottom 1.35s cubic-bezier(0.22, 1, 0.36, 1) 0.1s forwards;
+    }
+
+    body.ipdds-enter [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-child(1) {
+        animation: ipdds-from-left 1.35s cubic-bezier(0.22, 1, 0.36, 1) 0.16s forwards;
+    }
+
+    body.ipdds-enter [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-child(2) {
+        animation: ipdds-from-right 1.35s cubic-bezier(0.22, 1, 0.36, 1) 0.22s forwards;
+    }
+
+    body.ipdds-settled .top-nav,
+    body.ipdds-settled .hero-container,
+    body.ipdds-settled [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        opacity: 1;
+        transform: none;
+        animation: none;
+        pointer-events: auto;
+        will-change: auto;
     }
 
     .leaf-preview-box {
