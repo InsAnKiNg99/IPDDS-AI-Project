@@ -45,7 +45,7 @@ python dataset/down.py
 This downloads `moazeldsokyx/plantvillage` directly into your local cache (`~/.cache/kagglehub/...`).
 
 ### 3. Model Training
-To train the CNN model specifically on Potato and Tomato:
+To train the MobileNetV2 disease model on Potato and Tomato. The default input size is 160 by 160:
 ```bash
 python train.py --dataset-path "C:\Users\Muneer Hameed\.cache\kagglehub\datasets\moazeldsokyx\plantvillage\versions\1\dataset\train" --additional-dataset-path "C:\Users\Muneer Hameed\.cache\kagglehub\datasets\emmarex\plantdisease\versions\1" --epochs 10 --batch-size 32
 ```

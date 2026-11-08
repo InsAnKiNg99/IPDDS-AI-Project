@@ -22,8 +22,8 @@
     <string name="model_accuracy_label">Disease validation accuracy</string>
     <string name="model_class_count">13</string>
     <string name="model_class_label">Disease classes</string>
-    <string name="model_card_details">Crop estimator validation accuracy: %1$s · Potato + tomato · 2 on-device models · 128 × 128 RGB · Works offline</string>
-    <string name="model_accuracy_note">Measured on a class-stratified holdout from both PlantVillage sources. Field results may differ.</string>
+    <string name="model_card_details">Crop estimator validation accuracy: %1$s · Potato + tomato · 2 on-device models · %2$d × %3$d RGB · Works offline</string>
+    <string name="model_accuracy_note">Measured on the PlantVillage potato and tomato validation split. Field photos can still differ.</string>
     <string name="photo_section_title">Choose a leaf photo</string>
     <string name="crop_hint">Potato or Tomato</string>
     <string name="photo_placeholder">Center one clear leaf and fill most of the frame</string>
@@ -41,6 +41,7 @@
     <string name="low_confidence">Crop estimate is uncertain. Try another clear, close-up leaf photo and verify the crop before using care guidance.</string>
     <string name="crop_estimate_uncertain">Could not confidently estimate the crop. Center one clear leaf and try another photo.</string>
     <string name="disease_estimate_uncertain">The disease estimate is uncertain. Try another clear, close-up photo before relying on care guidance.</string>
+    <string name="leaves_disagree">Leaves in this photo do not all agree. The strongest reading is shown. Check one leaf up close before you act.</string>
     <string name="result_crop_confidence">Crop: %1$s (%2$s confidence)</string>
     <string name="result_disease_confidence">Disease confidence: %1$s</string>
 </resources>
