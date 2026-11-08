@@ -11,14 +11,11 @@ import android.graphics.Matrix
 import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.view.View
-import android.widget.AdapterView
-import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.ProgressBar
-import android.widget.Spinner
-import android.widget.Switch
 import android.widget.TextView
 import androidx.drawerlayout.widget.DrawerLayout
 import androidx.core.content.FileProvider
@@ -34,6 +31,7 @@ import java.util.ArrayDeque
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import kotlin.math.abs
 import kotlin.math.max
 
 class MainActivity : Activity() {
@@ -43,6 +41,7 @@ class MainActivity : Activity() {
     private var cropInterpreter: Interpreter? = null
     private var selectedImage: Uri? = null
     private var classNames: List<String> = emptyList()
+    private var cropClassNames: List<String> = emptyList()
     private var classMetadata: JSONObject? = null
     private var modelReady = false
     private var pendingCameraFile: File? = null
@@ -57,7 +56,6 @@ class MainActivity : Activity() {
     private lateinit var preview: ImageView
     private lateinit var emptyImageHint: View
     private lateinit var selectedFile: TextView
-    private lateinit var cropSelector: Spinner
     private lateinit var analyzeButton: Button
     private lateinit var progress: ProgressBar
     private lateinit var status: TextView
@@ -68,7 +66,6 @@ class MainActivity : Activity() {
     private lateinit var resultPathogen: TextView
     private lateinit var resultTreatment: TextView
     private lateinit var resultWarning: TextView
-    private lateinit var rememberPlantSelection: Switch
     private lateinit var capturePhotoButton: View
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -76,12 +73,6 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
         setupNavigation()
         connectViews()
-        cropSelector.adapter = ArrayAdapter.createFromResource(
-            this,
-            R.array.crop_options,
-            android.R.layout.simple_spinner_item
-        ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
-        setupPlantSelection()
 
         findViewById<Button>(R.id.choose_image).setOnClickListener { chooseImage() }
         capturePhotoButton = findViewById(R.id.capture_photo)
@@ -90,6 +81,7 @@ class MainActivity : Activity() {
 
         try {
             loadMetadata()
+            loadTrainingMetrics()
             loadModels()
             modelReady = true
         } catch (error: Exception) {
@@ -114,39 +106,6 @@ class MainActivity : Activity() {
         findViewById<View>(R.id.nav_leaf_checker).setOnClickListener { showPage(mainPage) }
         findViewById<View>(R.id.nav_about).setOnClickListener { showPage(aboutPage) }
         findViewById<View>(R.id.nav_settings).setOnClickListener { showPage(settingsPage) }
-    }
-
-    private fun setupPlantSelection() {
-        rememberPlantSelection = findViewById(R.id.remember_plant_selection)
-        val preferences = getSharedPreferences(SETTINGS_PREFERENCES, MODE_PRIVATE)
-        val shouldRemember = preferences.getBoolean(KEY_REMEMBER_PLANT_SELECTION, false)
-        rememberPlantSelection.isChecked = shouldRemember
-        cropSelector.setSelection(
-            if (shouldRemember) {
-                preferences.getInt(KEY_LAST_PLANT_SELECTION, 0).coerceIn(0, 2)
-            } else {
-                0
-            }
-        )
-        cropSelector.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                if (rememberPlantSelection.isChecked) {
-                    preferences.edit().putInt(KEY_LAST_PLANT_SELECTION, position).apply()
-                }
-            }
-
-            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
-        }
-        rememberPlantSelection.setOnCheckedChangeListener { _, isChecked ->
-            preferences.edit().apply {
-                putBoolean(KEY_REMEMBER_PLANT_SELECTION, isChecked)
-                if (isChecked) {
-                    putInt(KEY_LAST_PLANT_SELECTION, cropSelector.selectedItemPosition)
-                } else {
-                    remove(KEY_LAST_PLANT_SELECTION)
-                }
-            }.apply()
-        }
     }
 
     private fun showPage(selectedPage: View) {
@@ -185,7 +144,6 @@ class MainActivity : Activity() {
         preview.clipToOutline = true
         emptyImageHint = findViewById(R.id.empty_image_hint)
         selectedFile = findViewById(R.id.selected_file)
-        cropSelector = findViewById(R.id.crop_selector)
         analyzeButton = findViewById(R.id.analyze_image)
         progress = findViewById(R.id.progress)
         status = findViewById(R.id.status)
@@ -209,6 +167,28 @@ class MainActivity : Activity() {
         require(classNames.all { classMetadata?.has(it) == true }) { "A disease label is missing treatment data." }
     }
 
+    private fun loadTrainingMetrics() {
+        val text = assets.open("training_metrics.json").bufferedReader().use { it.readText() }
+        val metrics = JSONObject(text)
+        val diseaseAccuracy = metrics.getDouble("disease_accuracy")
+        val cropAccuracy = metrics.getDouble("crop_accuracy")
+        val cropClasses = metrics.getJSONArray("crop_classes")
+        cropClassNames = List(cropClasses.length()) { cropClasses.getString(it) }
+        require(cropClassNames == listOf("Potato", "Tomato")) {
+            "The crop model labels must be ordered Potato, then Tomato."
+        }
+        require(diseaseAccuracy.isFinite() && diseaseAccuracy in 0.0..1.0) {
+            "The disease validation accuracy is invalid."
+        }
+        require(cropAccuracy.isFinite() && cropAccuracy in 0.0..1.0) {
+            "The crop validation accuracy is invalid."
+        }
+        findViewById<TextView>(R.id.about_model_accuracy).text =
+            String.format(Locale.getDefault(), "%.1f%%", diseaseAccuracy * 100.0)
+        findViewById<TextView>(R.id.about_model_details).text =
+            getString(R.string.model_card_details, percent(cropAccuracy.toFloat()))
+    }
+
     private fun loadModels() {
         diseaseInterpreter = loadInterpreter("disease_model.tflite")
         cropInterpreter = loadInterpreter("crop_type_model.tflite")
@@ -223,8 +203,8 @@ class MainActivity : Activity() {
         require(disease.getOutputTensor(0).shape().last() == classNames.size) {
             "The disease model output does not match the label list."
         }
-        require(crop.getOutputTensor(0).shape().last() == 2) {
-            "The crop model must return Potato and Tomato scores."
+        require(crop.getOutputTensor(0).shape().last() == cropClassNames.size) {
+            "The crop model output does not match the label list."
         }
         require(disease.getInputTensor(0).dataType() == org.tensorflow.lite.DataType.FLOAT32) {
             "The disease model must use float image input."
@@ -330,7 +310,9 @@ class MainActivity : Activity() {
         selectedCameraFile = cameraFile
         selectedImage = uri
         selectedFile.text = displayName
+            ?: queryDisplayName(uri)
             ?: uri.lastPathSegment
+                ?.takeUnless { it.startsWith("msf:", ignoreCase = true) }
                 ?.substringAfterLast('/')
                 ?.let(Uri::decode)
             ?: getString(R.string.no_image_selected)
@@ -358,6 +340,19 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun queryDisplayName(uri: Uri): String? {
+        return contentResolver.query(
+            uri,
+            arrayOf(OpenableColumns.DISPLAY_NAME),
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            val nameColumn = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (nameColumn >= 0 && cursor.moveToFirst()) cursor.getString(nameColumn) else null
+        }?.takeIf { it.isNotBlank() }
+    }
+
     private fun analyzeImage() {
         val uri = selectedImage
         if (uri == null) {
@@ -372,12 +367,11 @@ class MainActivity : Activity() {
         resultPanel.visibility = View.GONE
         showStatus("")
         setBusy(true)
-        val selectedCrop = cropSelector.selectedItemPosition
         worker.execute {
             try {
                 val bitmap = decodeImage(uri, PREVIEW_MAX_SIZE)
                 val result = try {
-                    diagnose(bitmap, selectedCrop)
+                    diagnose(bitmap)
                 } finally {
                     bitmap.recycle()
                 }
@@ -393,6 +387,10 @@ class MainActivity : Activity() {
                     showStatus(
                         if (error is NotLeafPhotoException) {
                             getString(R.string.leaf_photo_required)
+                        } else if (error is UncertainCropClassificationException) {
+                            getString(R.string.crop_estimate_uncertain)
+                        } else if (error is UncertainLeafClassificationException) {
+                            getString(R.string.disease_estimate_uncertain)
                         } else {
                             "Could not analyze this photo: ${error.message ?: "unknown error"}"
                         }
@@ -402,7 +400,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun diagnose(bitmap: Bitmap, selectedCrop: Int): Diagnosis {
+    private fun diagnose(bitmap: Bitmap): Diagnosis {
         val input = bitmapToInput(bitmap)
         val cropOutput = Array(1) { FloatArray(2) }
         cropInterpreter?.run(input.duplicate().apply { rewind() }, cropOutput)
@@ -410,29 +408,26 @@ class MainActivity : Activity() {
         require(cropOutput[0].all { it.isFinite() && it in 0f..1f }) {
             "The crop model returned invalid scores."
         }
+        require(abs(cropOutput[0].sum() - 1f) <= PROBABILITY_SUM_TOLERANCE) {
+            "The crop model returned invalid probabilities."
+        }
 
-        val detectedCropIndex = if (cropOutput[0][1] >= TOMATO_THRESHOLD) 1 else 0
+        val detectedCropIndex = cropOutput[0].indices.maxBy { cropOutput[0][it] }
         val cropConfidenceValue = cropOutput[0][detectedCropIndex]
-        if (selectedCrop == 0 && cropConfidenceValue < MIN_CROP_CONFIDENCE) {
-            throw UncertainLeafClassificationException()
+        if (cropConfidenceValue < MIN_CROP_CONFIDENCE) {
+            throw UncertainCropClassificationException()
         }
-        val detectedCrop = if (detectedCropIndex == 0) "Potato" else "Tomato"
-        val cropName = when (selectedCrop) {
-            1 -> "Potato"
-            2 -> "Tomato"
-            else -> detectedCrop
-        }
-        val cropConfidence = if (selectedCrop == 0) {
-            cropOutput[0][detectedCropIndex]
-        } else {
-            null
-        }
+        val cropName = cropClassNames[detectedCropIndex]
+        val cropConfidence = cropConfidenceValue
 
         val diseaseOutput = Array(1) { FloatArray(classNames.size) }
         diseaseInterpreter?.run(input.duplicate().apply { rewind() }, diseaseOutput)
             ?: error("The disease model is not loaded.")
         require(diseaseOutput[0].all { it.isFinite() && it in 0f..1f }) {
             "The disease model returned invalid scores."
+        }
+        require(abs(diseaseOutput[0].sum() - 1f) <= PROBABILITY_SUM_TOLERANCE) {
+            "The disease model returned invalid probabilities."
         }
         val allowedIndices = classNames.indices.filter { classNames[it].startsWith(cropName) }
         require(allowedIndices.isNotEmpty()) { "No disease categories were found for $cropName." }
@@ -457,7 +452,7 @@ class MainActivity : Activity() {
             confidence = confidence,
             pathogen = details.optString("pathogen", "Not specified"),
             treatment = recommendation,
-            cropIsUncertain = selectedCrop == 0 && cropConfidence != null && cropConfidence < CROP_WARNING_THRESHOLD
+            cropIsUncertain = cropConfidence < CROP_WARNING_THRESHOLD
         )
     }
 
@@ -555,11 +550,11 @@ class MainActivity : Activity() {
     }
 
     private fun showResult(result: Diagnosis) {
-        resultCrop.text = if (result.cropConfidence == null) {
-            getString(R.string.result_crop_selected, result.crop)
-        } else {
-            getString(R.string.result_crop_confidence, result.crop, percent(result.cropConfidence))
-        }
+        resultCrop.text = getString(
+            R.string.result_crop_confidence,
+            result.crop,
+            percent(result.cropConfidence)
+        )
         resultDiagnosis.text = result.disease
         resultConfidence.text = getString(R.string.result_disease_confidence, percent(result.confidence))
         resultPathogen.text = result.pathogen
@@ -604,7 +599,7 @@ class MainActivity : Activity() {
 
     private data class Diagnosis(
         val crop: String,
-        val cropConfidence: Float?,
+        val cropConfidence: Float,
         val disease: String,
         val confidence: Float,
         val pathogen: String,
@@ -618,25 +613,24 @@ class MainActivity : Activity() {
         "Could not confidently identify this leaf. Try a clear, close-up photo of one potato or tomato leaf."
     )
 
+    private class UncertainCropClassificationException : Exception()
+
     companion object {
         private const val PICK_IMAGE_REQUEST = 1001
         private const val CAMERA_REQUEST = 1002
         private const val CAMERA_DIRECTORY = "camera"
         private const val PREVIEW_MAX_SIZE = 1024
-        private const val TOMATO_THRESHOLD = 0.7f
-        private const val CROP_WARNING_THRESHOLD = 0.7f
+        private const val CROP_WARNING_THRESHOLD = 0.85f
         private const val MIN_LEAF_HUE = 35f
         private const val MAX_LEAF_HUE = 155f
         private const val MIN_LEAF_SATURATION = 0.14f
         private const val MIN_LEAF_BRIGHTNESS = 0.12f
         private const val MIN_LEAF_COLOR_RATIO = 0.12f
-        private const val MAX_LEAF_COLOR_RATIO = 0.85f
+        private const val MAX_LEAF_COLOR_RATIO = 0.98f
         private const val MIN_CENTER_LEAF_COLOR_RATIO = 0.20f
         private const val MIN_LEAF_BRIGHTNESS_VARIANCE = 0.0081
-        private const val MIN_CROP_CONFIDENCE = 0.25f
+        private const val MIN_CROP_CONFIDENCE = 0.70f
         private const val MIN_DISEASE_CONFIDENCE = 0.35f
-        private const val SETTINGS_PREFERENCES = "ipdds_settings"
-        private const val KEY_REMEMBER_PLANT_SELECTION = "remember_plant_selection"
-        private const val KEY_LAST_PLANT_SELECTION = "last_plant_selection"
+        private const val PROBABILITY_SUM_TOLERANCE = 0.01f
     }
 }
