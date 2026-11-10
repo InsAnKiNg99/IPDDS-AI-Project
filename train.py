@@ -9,8 +9,10 @@ import json
 import argparse
 import hashlib
 import tempfile
+from collections import OrderedDict
 import numpy as np
 import tensorflow as tf
+from PIL import Image, ImageFilter
 from tensorflow.keras import layers, models, callbacks
 
 
@@ -143,6 +145,8 @@ def normalize_class_name(class_name):
 
 def dataset_source_name(path, fallback):
     normalized_path = path.replace("\\", "/").casefold()
+    if "mohitsingh1804/plantvillage" in normalized_path:
+        return "mohitsingh1804/plantvillage"
     if "moazeldsokyx/plantvillage" in normalized_path:
         return "moazeldsokyx/plantvillage"
     if "emmarex/plantdisease" in normalized_path:
@@ -240,55 +244,131 @@ def resolve_additional_dataset_paths(user_paths=None):
         downloaded = dataset_download("emmarex/plantdisease")
         return [resolve_source_directories(downloaded)]
     except Exception as error:
-        raise RuntimeError(
-            "Could not locate or download the supplemental emmarex/plantdisease dataset."
-        ) from error
+        print(f"[!] Supplemental dataset skipped: {error}")
+        return []
 
-def build_model(num_classes, img_size=(128, 128)):
+def letterbox(image, img_size):
+    image = tf.cast(image, tf.float32)
+    return tf.image.resize_with_pad(image, img_size[0], img_size[1])
+
+
+def augment_training_image(image, img_size):
+    """Letterbox, then vary leaf scale so small leaves and close-ups are learned."""
+    side = img_size[0]
+    image = letterbox(image, img_size)
+    choice = tf.random.uniform([])
+
+    def shrink():
+        scale = tf.random.uniform([], 0.35, 0.80)
+        new_side = tf.cast(tf.round(scale * side), tf.int32)
+        small = tf.image.resize(image, [new_side, new_side])
+        offset = tf.random.uniform([], 0, side - new_side + 1, dtype=tf.int32)
+        return tf.image.pad_to_bounding_box(small, offset, offset, side, side)
+
+    def zoom():
+        scale = tf.random.uniform([], 1.25, 2.00)
+        crop_side = tf.cast(tf.round(tf.cast(side, tf.float32) / scale), tf.int32)
+        crop_side = tf.clip_by_value(crop_side, 32, side)
+        max_offset = side - crop_side
+        offset = tf.random.uniform([], 0, max_offset + 1, dtype=tf.int32)
+        cropped = tf.image.crop_to_bounding_box(image, offset, offset, crop_side, crop_side)
+        return tf.image.resize(cropped, [side, side])
+
+    image = tf.cond(
+        choice < 0.55,
+        lambda: image,
+        lambda: tf.cond(choice < 0.80, shrink, zoom),
+    )
+    image = tf.image.rot90(image, tf.random.uniform([], 0, 4, dtype=tf.int32))
+    image = tf.image.random_flip_left_right(image)
+    image = tf.image.random_flip_up_down(image)
+    image = tf.image.random_brightness(image, 28.0)
+    image = tf.image.random_contrast(image, 0.85, 1.15)
+    return tf.clip_by_value(image, 0.0, 255.0)
+
+
+def build_model(num_classes, img_size=(160, 160)):
     """
-    Builds a robust, lightweight Convolutional Neural Network with:
-    - Data Augmentation layers to prevent overfitting
-    - Conv2D + BatchNormalization + MaxPooling2D blocks
-    - Dropout + Dense classification head
+    ImageNet MobileNetV2 backbone with a small disease head.
+    Pixels stay in 0..255 until the rescaling layer, matching both apps.
     """
-    inputs = layers.Input(shape=(img_size[0], img_size[1], 3))
-    
-
-    x = layers.RandomFlip("horizontal_and_vertical")(inputs)
-    x = layers.RandomRotation(0.15)(x)
-    x = layers.RandomZoom(0.1)(x)
-    x = layers.Rescaling(1./255)(x)
-    
-
-    x = layers.Conv2D(32, (3, 3), padding="same", activation="relu")(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.MaxPooling2D((2, 2))(x)
-    
-    x = layers.Conv2D(64, (3, 3), padding="same", activation="relu")(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.MaxPooling2D((2, 2))(x)
-    
-    x = layers.Conv2D(128, (3, 3), padding="same", activation="relu")(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.MaxPooling2D((2, 2))(x)
-    
-    x = layers.Conv2D(256, (3, 3), padding="same", activation="relu")(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.MaxPooling2D((2, 2))(x)
-    
-
-    x = layers.GlobalAveragePooling2D()(x)
-    x = layers.Dense(128, activation="relu")(x)
-    x = layers.Dropout(0.4)(x)
-    outputs = layers.Dense(num_classes, activation="softmax")(x)
-    
-    model = models.Model(inputs=inputs, outputs=outputs, name="IPDDS_Potato_Tomato_CNN")
+    inputs = layers.Input(shape=(img_size[0], img_size[1], 3), name="image")
+    x = layers.Rescaling(1 / 127.5, offset=-1.0, name="mobilenet_preprocess")(inputs)
+    backbone = tf.keras.applications.MobileNetV2(
+        input_shape=(img_size[0], img_size[1], 3),
+        include_top=False,
+        weights="imagenet",
+        pooling="avg",
+        alpha=1.0,
+        name="mobilenet_v2_backbone",
+    )
+    backbone.trainable = False
+    embedding = layers.Activation("linear", name="embedding")(backbone(x))
+    hidden = layers.Dense(256, activation="relu", name="disease_hidden")(embedding)
+    hidden = layers.Dropout(0.30, name="disease_dropout")(hidden)
+    outputs = layers.Dense(num_classes, activation="softmax", name="disease")(hidden)
+    model = models.Model(inputs=inputs, outputs=outputs, name="IPDDS_MobileNetV2")
     return model
+
+
+def compile_disease_model(model, learning_rate):
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+        loss="sparse_categorical_crossentropy",
+        metrics=["accuracy"],
+    )
+
+
+def unfreeze_backbone_top(model, trainable_layers):
+    backbone = model.get_layer("mobilenet_v2_backbone")
+    backbone.trainable = True
+    frozen_count = max(0, len(backbone.layers) - trainable_layers)
+    for layer in backbone.layers[:frozen_count]:
+        layer.trainable = False
+    for layer in backbone.layers:
+        if isinstance(layer, layers.BatchNormalization):
+            layer.trainable = False
+    return backbone
+
+
+def disease_class_weights(train_counts, max_weight=4.0):
+    counts = np.asarray(train_counts, dtype=np.float64)
+    raw_weights = counts.sum() / (len(counts) * np.maximum(counts, 1.0))
+    capped = np.minimum(raw_weights, max_weight)
+    return {index: float(weight) for index, weight in enumerate(capped)}
+
+
+def classification_scores(labels, predictions, class_names):
+    labels = np.asarray(labels)
+    predictions = np.asarray(predictions)
+    report = {}
+    f1_scores = []
+    recalls = []
+    for index, class_name in enumerate(class_names):
+        true_positive = int(np.sum((labels == index) & (predictions == index)))
+        support = int(np.sum(labels == index))
+        predicted_count = int(np.sum(predictions == index))
+        recall = true_positive / support if support else 0.0
+        precision = true_positive / predicted_count if predicted_count else 0.0
+        f1_score = (
+            2 * precision * recall / (precision + recall)
+            if precision + recall
+            else 0.0
+        )
+        report[class_name] = {
+            "precision": float(precision),
+            "recall": float(recall),
+            "f1": float(f1_score),
+            "support": support,
+        }
+        f1_scores.append(f1_score)
+        recalls.append(recall)
+    return report, float(np.mean(recalls)), float(np.mean(f1_scores))
 
 def train_crop_classifier(model, train_ds, val_ds):
     feature_extractor = models.Model(
         inputs=model.input,
-        outputs=model.layers[-3].output,
+        outputs=model.get_layer("embedding").output,
         name="IPDDS_Feature_Extractor"
     )
     crop_labels_by_class = tf.constant(
@@ -363,9 +443,12 @@ def collect_examples(directory):
     return examples, class_counts
 
 
-def create_dataset(examples, batch_size, img_size, shuffle, seed):
+def create_dataset(examples, batch_size, img_size, shuffle, seed, training):
     paths, labels = zip(*examples)
     dataset = tf.data.Dataset.from_tensor_slices((list(paths), list(labels)))
+    options = tf.data.Options()
+    options.deterministic = True
+    dataset = dataset.with_options(options)
     if shuffle:
         dataset = dataset.shuffle(len(paths), seed=seed, reshuffle_each_iteration=True)
 
@@ -376,7 +459,12 @@ def create_dataset(examples, batch_size, img_size, shuffle, seed):
             expand_animations=False
         )
         image.set_shape((None, None, 3))
-        return tf.image.resize(image, img_size), label
+        image = tf.cast(image, tf.float32)
+        if training:
+            image = augment_training_image(image, img_size)
+        else:
+            image = letterbox(image, img_size)
+        return image, label
 
     return dataset.map(
         load_image,
@@ -502,7 +590,7 @@ def create_stratified_splits(train_paths, val_paths, validation_split=0.2, seed=
     return train_examples, validation_examples, train_counts, validation_counts, duplicate_count
 
 
-def export_tflite_models(disease_model, crop_model, assets_dir):
+def export_tflite_models(disease_model, crop_model, assets_dir, img_size):
     os.makedirs(assets_dir, exist_ok=True)
     converted_models = {
         "disease_model.tflite": tf.lite.TFLiteConverter.from_keras_model(disease_model).convert(),
@@ -516,7 +604,7 @@ def export_tflite_models(disease_model, crop_model, assets_dir):
     for file_name, interpreter in interpreters.items():
         interpreter.allocate_tensors()
         input_shape = interpreter.get_input_details()[0]["shape"].tolist()
-        if input_shape != [1, 128, 128, 3]:
+        if input_shape != [1, img_size[0], img_size[1], 3]:
             raise ValueError(f"{file_name} has an unexpected input shape: {input_shape}")
         expected_classes = 2 if file_name == "crop_type_model.tflite" else len(POTATO_TOMATO_CLASSES)
         output_shape = interpreter.get_output_details()[0]["shape"].tolist()
@@ -529,14 +617,14 @@ def export_tflite_models(disease_model, crop_model, assets_dir):
 def train(
     dataset_dir=None,
     additional_dataset_dirs=None,
-    epochs=10,
+    epochs=8,
     batch_size=32,
-    img_size=(128, 128),
+    img_size=(160, 160),
     output_dir="model",
     android_assets_dir=os.path.join("android", "app", "src", "main", "assets")
 ):
-    if img_size != (128, 128):
-        raise ValueError("The Android and web apps share 128 by 128 models; keep --img-size at 128.")
+    if img_size[0] != img_size[1] or img_size[0] < 128:
+        raise ValueError("Use a square image size of at least 128. The trained default is 160.")
     train_path, val_path = resolve_dataset_paths(dataset_dir)
     supplemental_sources = resolve_additional_dataset_paths(additional_dataset_dirs)
     train_paths = [train_path] + [source[0] for source in supplemental_sources]
@@ -548,8 +636,15 @@ def train(
     train_examples, validation_examples, train_counts, validation_counts, duplicate_count = (
         create_stratified_splits(train_paths, val_paths or None)
     )
-    train_ds = create_dataset(train_examples, batch_size, img_size, shuffle=True, seed=42)
-    val_ds = create_dataset(validation_examples, batch_size, img_size, shuffle=False, seed=42)
+    train_ds = create_dataset(
+        train_examples, batch_size, img_size, shuffle=True, seed=42, training=True
+    )
+    train_clean_ds = create_dataset(
+        train_examples, batch_size, img_size, shuffle=False, seed=42, training=False
+    )
+    val_ds = create_dataset(
+        validation_examples, batch_size, img_size, shuffle=False, seed=42, training=False
+    )
 
     print("=" * 60)
     print("IPDDS - Potato & Tomato Leaf Disease Model Training")
@@ -563,12 +658,10 @@ def train(
     print(f"Training by class  : {dict(zip(POTATO_TOMATO_CLASSES, train_counts))}")
     print(f"Validation by class: {dict(zip(POTATO_TOMATO_CLASSES, validation_counts))}")
 
+    class_weights = disease_class_weights(train_counts)
+    print(f"Class weights      : {class_weights}")
     model = build_model(num_classes=len(POTATO_TOMATO_CLASSES), img_size=img_size)
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
-        loss="sparse_categorical_crossentropy",
-        metrics=["accuracy"]
-    )
+    compile_disease_model(model, learning_rate=0.001)
 
     os.makedirs(output_dir, exist_ok=True)
     staging_dir = tempfile.mkdtemp(prefix=".ipdds-training-", dir=output_dir)
@@ -581,31 +674,99 @@ def train(
         )
         early_stop_cb = callbacks.EarlyStopping(
             monitor="val_accuracy",
-            patience=4,
+            patience=3,
             restore_best_weights=True
         )
 
+        class KeepBestWeights(callbacks.Callback):
+            def __init__(self):
+                super().__init__()
+                self.best = -1.0
+                self.weights = None
+
+            def on_epoch_end(self, epoch, logs=None):
+                score = float((logs or {}).get("val_accuracy", -1.0))
+                if score > self.best:
+                    self.best = score
+                    self.weights = self.model.get_weights()
+
+        keep_best = KeepBestWeights()
+
+        print("Phase 1: training the disease head on a frozen MobileNetV2 backbone")
         model.fit(
             train_ds,
             validation_data=val_ds,
             epochs=epochs,
-            callbacks=[checkpoint_cb, early_stop_cb]
+            class_weight=class_weights,
+            callbacks=[keep_best, checkpoint_cb, early_stop_cb, callbacks.ReduceLROnPlateau(
+                monitor="val_accuracy",
+                factor=0.5,
+                patience=1,
+                min_lr=1e-6,
+                mode="max",
+                verbose=1,
+            )]
         )
 
+        print("Phase 2: fine-tuning the top of MobileNetV2")
+        unfreeze_backbone_top(model, trainable_layers=40)
+        compile_disease_model(model, learning_rate=5e-5)
+        finetune_epochs = max(3, epochs // 2)
+        model.fit(
+            train_ds,
+            validation_data=val_ds,
+            epochs=finetune_epochs,
+            class_weight=class_weights,
+            callbacks=[keep_best, checkpoint_cb, callbacks.EarlyStopping(
+                monitor="val_accuracy",
+                patience=2,
+                restore_best_weights=True,
+            ), callbacks.ReduceLROnPlateau(
+                monitor="val_accuracy",
+                factor=0.5,
+                patience=1,
+                min_lr=1e-6,
+                mode="max",
+                verbose=1,
+            )]
+        )
+        if keep_best.weights is not None:
+            model.set_weights(keep_best.weights)
+            print(f"Restored best validation accuracy: {keep_best.best:.4f}")
+
         disease_metrics = model.evaluate(val_ds, verbose=0, return_dict=True)
-        crop_model, crop_metrics = train_crop_classifier(model, train_ds, val_ds)
+        disease_probabilities = model.predict(val_ds, verbose=0)
+        disease_predictions = np.argmax(disease_probabilities, axis=1)
+        validation_labels = np.asarray([label for _, label in validation_examples], dtype=np.int32)
+        if len(disease_predictions) != len(validation_labels):
+            raise ValueError("Validation predictions do not match the validation labels.")
+        class_report, macro_recall, macro_f1 = classification_scores(
+            validation_labels,
+            disease_predictions,
+            POTATO_TOMATO_CLASSES,
+        )
+        crop_model, crop_metrics = train_crop_classifier(model, train_clean_ds, val_ds)
         training_datasets = [dataset_source_name(train_path, "primary PlantVillage dataset")]
         training_datasets.extend(
             dataset_source_name(source[0], "supplemental PlantVillage dataset")
             for source in supplemental_sources
         )
         metrics_export = {
-            "validation_split": "stratified 80/20 per class after exact-file deduplication",
+            "validation_split": (
+                "official validation directories after exact-file deduplication"
+                if val_paths
+                else "stratified 80/20 per class after exact-file deduplication"
+            ),
             "training_images": len(train_examples),
             "validation_images": len(validation_examples),
             "duplicate_images_removed": duplicate_count,
             "training_datasets": training_datasets,
+            "architecture": "MobileNetV2 ImageNet backbone, 256-unit disease head, top-layer fine-tune",
+            "image_size": list(img_size),
             "disease_accuracy": float(disease_metrics["accuracy"]),
+            "disease_macro_recall": macro_recall,
+            "disease_macro_f1": macro_f1,
+            "class_metrics": class_report,
             "crop_accuracy": float(crop_metrics["accuracy"]),
             "crop_classes": ["Potato", "Tomato"],
             "class_validation_counts": dict(zip(POTATO_TOMATO_CLASSES, validation_counts))
@@ -620,14 +781,24 @@ def train(
         }
 
         model.save(os.path.join(staging_dir, "disease_model.keras"))
-        model.save(os.path.join(staging_dir, "disease_model.h5"))
+        saved_model_names = [
+            "disease_model.keras",
+            "crop_type_model.keras",
+            "class_indices.json",
+            "training_metrics.json",
+        ]
+        try:
+            model.save(os.path.join(staging_dir, "disease_model.h5"))
+            saved_model_names.insert(1, "disease_model.h5")
+        except Exception as error:
+            print(f"[!] H5 export skipped: {error}")
         crop_model.save(os.path.join(staging_dir, "crop_type_model.keras"))
         with open(os.path.join(staging_dir, "class_indices.json"), "w", encoding="utf-8") as metadata_file:
             json.dump(metadata_export, metadata_file, indent=2)
         with open(os.path.join(staging_dir, "training_metrics.json"), "w", encoding="utf-8") as metrics_file:
             json.dump(metrics_export, metrics_file, indent=2)
 
-        tflite_models = export_tflite_models(model, crop_model, android_assets_dir)
+        tflite_models = export_tflite_models(model, crop_model, android_assets_dir, img_size)
         staged_tflite = []
         for file_name, model_bytes in tflite_models.items():
             staged_path = os.path.join(android_assets_dir, f".{file_name}.tmp")
@@ -647,13 +818,7 @@ def train(
             os.path.join(android_assets_dir, "training_metrics.json")
         ))
 
-        for file_name in (
-            "disease_model.keras",
-            "disease_model.h5",
-            "crop_type_model.keras",
-            "class_indices.json",
-            "training_metrics.json"
-        ):
+        for file_name in saved_model_names:
             os.replace(
                 os.path.join(staging_dir, file_name),
                 os.path.join(output_dir, file_name)
@@ -680,8 +845,174 @@ def train(
         os.rmdir(staging_dir)
 
     print(f"[+] Held-out disease accuracy: {metrics_export['disease_accuracy']:.4f}")
+    print(f"[+] Held-out macro recall: {metrics_export['disease_macro_recall']:.4f}")
+    print(f"[+] Held-out macro F1: {metrics_export['disease_macro_f1']:.4f}")
     print(f"[+] Held-out crop accuracy: {metrics_export['crop_accuracy']:.4f}")
     print("[+] Keras, H5, metadata, training metrics, and Android TFLite models were updated.")
+
+def _leaf_array(path, cache):
+    cached = cache.get(path)
+    if cached is not None:
+        return cached
+    image = Image.open(path).convert("RGB")
+    image.thumbnail((360, 360))
+    array = np.asarray(image, dtype=np.uint8)
+    cache[path] = array
+    if len(cache) > 500:
+        cache.popitem(last=False)
+    return array
+
+
+def _paste_leaf(canvas, leaf, rng, scale_range):
+    side = int(canvas.shape[0] * rng.uniform(*scale_range))
+    side = int(np.clip(side, 64, canvas.shape[0] - 8))
+    resized = np.asarray(Image.fromarray(leaf).resize((side, side), Image.Resampling.BILINEAR))
+    saturation = resized.max(axis=2).astype(np.int16) - resized.min(axis=2).astype(np.int16)
+    mask = saturation > 20
+    top = int(rng.integers(0, canvas.shape[0] - side + 1))
+    left = int(rng.integers(0, canvas.shape[1] - side + 1))
+    region = canvas[top:top + side, left:left + side]
+    region[mask] = resized[mask]
+
+
+def _whole_plant_canvas(rng, paths_by_label, label, cache):
+    class_name = POTATO_TOMATO_CLASSES[label]
+    crop_prefix = "Potato" if class_name.startswith("Potato") else "Tomato"
+    healthy_label = next(
+        index for index, name in enumerate(POTATO_TOMATO_CLASSES)
+        if name.startswith(crop_prefix) and "healthy" in name.lower()
+    )
+    background = _leaf_array(paths_by_label[healthy_label][int(rng.integers(len(paths_by_label[healthy_label])))], cache)
+    canvas_image = Image.fromarray(background).resize((480, 480), Image.Resampling.BILINEAR)
+    canvas_image = canvas_image.filter(ImageFilter.GaussianBlur(radius=7))
+    canvas = np.asarray(canvas_image, dtype=np.float32) * float(rng.uniform(0.72, 1.08))
+    shade = np.linspace(0.78, 1.08, 480, dtype=np.float32)
+    if rng.random() < 0.5:
+        shade = shade[:, None]
+    else:
+        shade = shade[None, :]
+    canvas *= shade[..., None]
+    for _ in range(int(rng.integers(2, 5))):
+        filler = _leaf_array(paths_by_label[healthy_label][int(rng.integers(len(paths_by_label[healthy_label])))], cache)
+        _paste_leaf(canvas, filler, rng, (0.25, 0.55))
+    if "healthy" not in class_name.lower():
+        diseased = _leaf_array(paths_by_label[label][int(rng.integers(len(paths_by_label[label])))], cache)
+        _paste_leaf(canvas, diseased, rng, (0.42, 0.78))
+    canvas = np.clip(canvas, 0, 255).astype(np.uint8)
+    return np.asarray(Image.fromarray(canvas).resize((160, 160), Image.Resampling.BILINEAR))
+
+
+def adapt_whole_plant(
+    dataset_dir=None,
+    epochs=4,
+    batch_size=32,
+    output_dir="model",
+    android_assets_dir=os.path.join("android", "app", "src", "main", "assets"),
+):
+    """Teach the saved model to read a frame that contains several leaves."""
+    train_path, val_path = resolve_dataset_paths(dataset_dir)
+    tf.keras.utils.set_random_seed(7)
+    train_examples, validation_examples, train_counts, validation_counts, duplicate_count = (
+        create_stratified_splits([train_path], [val_path] if val_path else None)
+    )
+    paths_by_label = {index: [] for index in range(len(POTATO_TOMATO_CLASSES))}
+    for path, label in train_examples:
+        paths_by_label[label].append(path)
+    img_size = (160, 160)
+    val_ds = create_dataset(validation_examples, batch_size, img_size, shuffle=False, seed=7, training=False)
+    model = tf.keras.models.load_model(os.path.join(output_dir, "disease_model.keras"), compile=False)
+    compile_disease_model(model, learning_rate=1e-5)
+    baseline_weights = model.get_weights()
+    baseline = model.evaluate(val_ds, verbose=0, return_dict=True)
+    baseline_accuracy = float(baseline["accuracy"])
+    print(f"Baseline held-out accuracy: {baseline_accuracy:.4f}")
+
+    rng = np.random.default_rng(7)
+    cache = OrderedDict()
+    images = []
+    labels = []
+    for label in range(len(POTATO_TOMATO_CLASSES)):
+        for _ in range(160):
+            images.append(_whole_plant_canvas(rng, paths_by_label, label, cache))
+            labels.append(label)
+        rehearsal_paths = paths_by_label[label][:]
+        rng.shuffle(rehearsal_paths)
+        for path in rehearsal_paths[:70]:
+            leaf = _leaf_array(path, cache)
+            framed = np.asarray(
+                Image.fromarray(leaf).resize((160, 160), Image.Resampling.BILINEAR),
+                dtype=np.uint8,
+            )
+            images.append(framed)
+            labels.append(label)
+    images = np.stack(images).astype(np.float32)
+    labels = np.asarray(labels, dtype=np.int32)
+    print(f"Whole-plant adaptation images: {len(labels)}")
+
+    unfreeze_backbone_top(model, trainable_layers=30)
+    compile_disease_model(model, learning_rate=2e-5)
+    class_weights = disease_class_weights([int(np.sum(labels == index)) for index in range(len(POTATO_TOMATO_CLASSES))])
+    history = model.fit(
+        images,
+        labels,
+        validation_data=val_ds,
+        epochs=epochs,
+        batch_size=batch_size,
+        class_weight=class_weights,
+        callbacks=[callbacks.EarlyStopping(monitor="val_accuracy", patience=2, restore_best_weights=True)],
+        verbose=2,
+    )
+    adapted = model.evaluate(val_ds, verbose=0, return_dict=True)
+    adapted_accuracy = float(adapted["accuracy"])
+    print(f"Adapted held-out accuracy: {adapted_accuracy:.4f}")
+    if adapted_accuracy + 0.03 < baseline_accuracy:
+        model.set_weights(baseline_weights)
+        print("Adaptation lowered the held-out score too far, so the previous model was kept.")
+        return
+
+    disease_probabilities = model.predict(val_ds, verbose=0)
+    disease_predictions = np.argmax(disease_probabilities, axis=1)
+    validation_labels = np.asarray([label for _, label in validation_examples], dtype=np.int32)
+    class_report, macro_recall, macro_f1 = classification_scores(
+        validation_labels, disease_predictions, POTATO_TOMATO_CLASSES
+    )
+    previous_metrics_path = os.path.join(output_dir, "training_metrics.json")
+    with open(previous_metrics_path, "r", encoding="utf-8") as metrics_file:
+        metrics_export = json.load(metrics_file)
+    metrics_export.update({
+        "architecture": "MobileNetV2 fine-tuned on single leaves and multi-leaf plant scenes",
+        "disease_accuracy": adapted_accuracy,
+        "disease_macro_recall": macro_recall,
+        "disease_macro_f1": macro_f1,
+        "class_metrics": class_report,
+        "class_validation_counts": dict(zip(POTATO_TOMATO_CLASSES, validation_counts)),
+        "whole_plant_adaptation_images": int(len(labels)),
+        "baseline_disease_accuracy": baseline_accuracy,
+    })
+    with open(os.path.join(output_dir, "class_indices.json"), "r", encoding="utf-8") as metadata_file:
+        metadata_export = json.load(metadata_file)
+    model.save(os.path.join(output_dir, "disease_model.keras"))
+    try:
+        model.save(os.path.join(output_dir, "disease_model.h5"))
+    except Exception as error:
+        print(f"[!] H5 export skipped: {error}")
+    with open(previous_metrics_path, "w", encoding="utf-8") as metrics_file:
+        json.dump(metrics_export, metrics_file, indent=2)
+    crop_model = tf.keras.models.load_model(os.path.join(output_dir, "crop_type_model.keras"), compile=False)
+    tflite_models = export_tflite_models(model, crop_model, android_assets_dir, img_size)
+    for file_name, model_bytes in tflite_models.items():
+        with open(os.path.join(android_assets_dir, file_name), "wb") as model_file:
+            model_file.write(model_bytes)
+    for file_name, payload in (
+        ("class_indices.json", metadata_export),
+        ("training_metrics.json", metrics_export),
+    ):
+        with open(os.path.join(android_assets_dir, file_name), "w", encoding="utf-8") as metadata_file:
+            json.dump(payload, metadata_file, indent=2)
+    best_epoch = max(history.history.get("val_accuracy", [adapted_accuracy]))
+    print(f"[+] Best adaptation validation accuracy this run: {best_epoch:.4f}")
+    print("[+] Disease model updated for multi-leaf photos. The crop model was left as it was.")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Potato & Tomato Plant Disease Detector")
@@ -697,12 +1028,23 @@ if __name__ == "__main__":
         action="store_true",
         help="Train only on the primary PlantVillage dataset"
     )
-    parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs")
+    parser.add_argument("--epochs", type=int, default=8, help="Epochs for the frozen-backbone phase")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size for training")
-    parser.add_argument("--img-size", type=int, default=128, help="Square image resolution (e.g. 128 for fast CPU training)")
+    parser.add_argument("--img-size", type=int, default=160, help="Square MobileNetV2 input resolution")
+    parser.add_argument(
+        "--adapt-whole-plant",
+        action="store_true",
+        help="Fine-tune the saved disease model on multi-leaf scenes",
+    )
     args = parser.parse_args()
-    
-    train(
+
+    if args.adapt_whole_plant:
+        adapt_whole_plant(
+            dataset_dir=args.dataset_path,
+            epochs=args.epochs,
+        )
+    else:
+        train(
         dataset_dir=args.dataset_path,
         additional_dataset_dirs=[] if args.skip_supplemental_dataset else args.additional_dataset_path,
         epochs=args.epochs,

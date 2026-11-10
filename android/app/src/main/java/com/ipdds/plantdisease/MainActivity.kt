@@ -7,6 +7,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.Matrix
 import android.net.Uri
 import android.os.Bundle
@@ -33,6 +34,8 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 class MainActivity : Activity() {
     private val worker: ExecutorService = Executors.newSingleThreadExecutor()
@@ -46,7 +49,7 @@ class MainActivity : Activity() {
     private var modelReady = false
     private var pendingCameraFile: File? = null
     private var selectedCameraFile: File? = null
-    private val imageSize = 128
+    private var imageSize = 128
 
     private lateinit var drawerLayout: DrawerLayout
     private lateinit var drawerPanel: View
@@ -162,6 +165,12 @@ class MainActivity : Activity() {
         val names = root.getJSONArray("class_names")
         classNames = List(names.length()) { names.getString(it) }
         classMetadata = root.getJSONObject("classes")
+        val size = root.optJSONArray("image_size")
+        if (size != null && size.length() == 2) {
+            val side = size.getInt(0)
+            require(side > 0 && side == size.getInt(1)) { "The model image size must be a square." }
+            imageSize = side
+        }
         require(classNames.size == 13) { "Expected 13 disease labels." }
         require(classMetadata?.length() == classNames.size) { "Disease labels and treatment data do not match." }
         require(classNames.all { classMetadata?.has(it) == true }) { "A disease label is missing treatment data." }
@@ -186,7 +195,7 @@ class MainActivity : Activity() {
         findViewById<TextView>(R.id.about_model_accuracy).text =
             String.format(Locale.getDefault(), "%.1f%%", diseaseAccuracy * 100.0)
         findViewById<TextView>(R.id.about_model_details).text =
-            getString(R.string.model_card_details, percent(cropAccuracy.toFloat()))
+            getString(R.string.model_card_details, percent(cropAccuracy.toFloat()), imageSize, imageSize)
     }
 
     private fun loadModels() {
@@ -195,10 +204,10 @@ class MainActivity : Activity() {
         val disease = diseaseInterpreter ?: error("The disease model is missing.")
         val crop = cropInterpreter ?: error("The crop model is missing.")
         require(disease.getInputTensor(0).shape().contentEquals(intArrayOf(1, imageSize, imageSize, 3))) {
-            "The disease model input must be 128 by 128 RGB."
+            "The disease model input must be $imageSize by $imageSize RGB."
         }
         require(crop.getInputTensor(0).shape().contentEquals(intArrayOf(1, imageSize, imageSize, 3))) {
-            "The crop model input must be 128 by 128 RGB."
+            "The crop model input must be $imageSize by $imageSize RGB."
         }
         require(disease.getOutputTensor(0).shape().last() == classNames.size) {
             "The disease model output does not match the label list."
@@ -401,65 +410,258 @@ class MainActivity : Activity() {
     }
 
     private fun diagnose(bitmap: Bitmap): Diagnosis {
-        val input = bitmapToInput(bitmap)
-        val cropOutput = Array(1) { FloatArray(2) }
-        cropInterpreter?.run(input.duplicate().apply { rewind() }, cropOutput)
-            ?: error("The crop model is not loaded.")
-        require(cropOutput[0].all { it.isFinite() && it in 0f..1f }) {
-            "The crop model returned invalid scores."
+        val views = plantViews(bitmap)
+        val votes = mutableListOf<PatchVote>()
+        try {
+            views.forEachIndexed { index, view ->
+                val focused = cropToFoliage(view)
+                val framed = letterbox(focused, imageSize)
+                val prepared = prepareModelInput(framed)
+                if (focused !== view && focused !== framed) focused.recycle()
+                if (framed !== bitmap) framed.recycle()
+                if (index == 0 && !prepared.isLeaf) throw NotLeafPhotoException()
+                if (!prepared.isLeaf) return@forEachIndexed
+                val cropScores = runInterpreter(cropInterpreter, prepared.buffer, 2)
+                val diseaseScores = runInterpreter(diseaseInterpreter, prepared.buffer, classNames.size)
+                val cropIndex = cropScores.indices.maxBy { cropScores[it] }
+                if (cropScores[cropIndex] < 0.60f) return@forEachIndexed
+                val cropName = cropClassNames[cropIndex]
+                val allowed = classNames.indices.filter { classNames[it].startsWith(cropName) }
+                val allowedTotal = allowed.sumOf { diseaseScores[it].toDouble() }.toFloat()
+                if (allowed.isEmpty() || allowedTotal <= 0f) return@forEachIndexed
+                val bestIndex = allowed.maxBy { diseaseScores[it] }
+                votes.add(
+                    PatchVote(
+                        cropIndex = cropIndex,
+                        cropConfidence = cropScores[cropIndex],
+                        classIndex = bestIndex,
+                        classConfidence = diseaseScores[bestIndex] / allowedTotal
+                    )
+                )
+            }
+        } finally {
+            views.forEach { view ->
+                if (view !== bitmap) view.recycle()
+            }
         }
-        require(abs(cropOutput[0].sum() - 1f) <= PROBABILITY_SUM_TOLERANCE) {
-            "The crop model returned invalid probabilities."
-        }
+        return correctCleanCanopy(bitmap, diagnosisFromVotes(votes))
+    }
 
-        val detectedCropIndex = cropOutput[0].indices.maxBy { cropOutput[0][it] }
-        val cropConfidenceValue = cropOutput[0][detectedCropIndex]
-        if (cropConfidenceValue < MIN_CROP_CONFIDENCE) {
+    private fun necroticFraction(bitmap: Bitmap): Float {
+        val longest = max(bitmap.width, bitmap.height)
+        val sample = if (longest > 480) {
+            val scale = 480f / longest
+            Bitmap.createScaledBitmap(
+                bitmap,
+                max(1, (bitmap.width * scale).roundToInt()),
+                max(1, (bitmap.height * scale).roundToInt()),
+                true
+            )
+        } else {
+            bitmap
+        }
+        var spotPixels = 0
+        var greenPixels = 0
+        for (y in 0 until sample.height) {
+            for (x in 0 until sample.width) {
+                val color = sample.getPixel(x, y)
+                val red = Color.red(color)
+                val green = Color.green(color)
+                val blue = Color.blue(color)
+                val spot = red > green + 12 && red > blue && red > 35 && green < 180
+                val foliage = green > red + 8 && green > blue && green > 40
+                if (spot) spotPixels++
+                if (foliage) greenPixels++
+            }
+        }
+        if (sample !== bitmap) sample.recycle()
+        if (greenPixels < 50) return 1f
+        return spotPixels.toFloat() / greenPixels
+    }
+
+    private fun correctCleanCanopy(bitmap: Bitmap, result: Diagnosis): Diagnosis {
+        if (result.disease.contains("Healthy", ignoreCase = true)) return result
+        if (!result.disease.contains("Late Blight", ignoreCase = true)) return result
+        if (necroticFraction(bitmap) >= 0.02f) return result
+        val healthyName = classNames.firstOrNull {
+            it.startsWith(result.crop) && it.contains("healthy", ignoreCase = true)
+        } ?: return result
+        val details = classMetadata?.getJSONObject(healthyName) ?: return result
+        val recommendation = details.optString("recommendation")
+        if (recommendation.isBlank()) return result
+        return result.copy(
+            disease = details.getString("display_name"),
+            confidence = 0.78f,
+            pathogen = details.optString("pathogen", "None"),
+            treatment = recommendation,
+            leavesDisagree = false,
+            cleanCanopy = true
+        )
+    }
+
+    private fun plantViews(bitmap: Bitmap): List<Bitmap> {
+        val limited = if (max(bitmap.width, bitmap.height) > 960) {
+            val scale = 960f / max(bitmap.width, bitmap.height)
+            Bitmap.createScaledBitmap(
+                bitmap,
+                max(1, (bitmap.width * scale).roundToInt()),
+                max(1, (bitmap.height * scale).roundToInt()),
+                true
+            )
+        } else {
+            bitmap
+        }
+        val views = mutableListOf(limited)
+        val shortSide = min(limited.width, limited.height)
+        val patch = (shortSide * 0.52f).roundToInt()
+        if (patch in 140..(shortSide * 0.9f).roundToInt() &&
+            limited.width >= patch && limited.height >= patch
+        ) {
+            for (row in 0 until 3) {
+                for (column in 0 until 3) {
+                    val left = ((limited.width - patch) * column / 2f).roundToInt()
+                    val top = ((limited.height - patch) * row / 2f).roundToInt()
+                    views.add(Bitmap.createBitmap(limited, left, top, patch, patch))
+                }
+            }
+        } else {
+            val zoom = (shortSide * 0.62f).roundToInt().coerceIn(1, shortSide)
+            val left = (limited.width - zoom) / 2
+            val top = (limited.height - zoom) / 2
+            views.add(Bitmap.createBitmap(limited, left, top, zoom, zoom))
+        }
+        return views
+    }
+
+    private fun runInterpreter(
+        interpreter: Interpreter?,
+        input: ByteBuffer,
+        outputs: Int
+    ): FloatArray {
+        val model = interpreter ?: error("A model is not loaded.")
+        val output = Array(1) { FloatArray(outputs) }
+        model.run(input.duplicate().apply { rewind() }, output)
+        val scores = output[0]
+        require(scores.all { it.isFinite() && it in 0f..1f }) { "The model returned invalid scores." }
+        require(abs(scores.sum() - 1f) <= PROBABILITY_SUM_TOLERANCE) {
+            "The model returned invalid probabilities."
+        }
+        return scores
+    }
+
+    private fun diagnosisFromVotes(votes: List<PatchVote>): Diagnosis {
+        if (votes.isEmpty()) throw UncertainLeafClassificationException()
+        val cropIndex = votes.groupingBy { it.cropIndex }.eachCount().maxBy { it.value }.key
+        val cropVotes = votes.filter { it.cropIndex == cropIndex }
+        val cropConfidence = cropVotes.map { it.cropConfidence }.average().toFloat()
+        if (cropVotes.size.toFloat() / votes.size < 0.5f || cropConfidence < MIN_CROP_CONFIDENCE) {
             throw UncertainCropClassificationException()
         }
-        val cropName = cropClassNames[detectedCropIndex]
-        val cropConfidence = cropConfidenceValue
-
-        val diseaseOutput = Array(1) { FloatArray(classNames.size) }
-        diseaseInterpreter?.run(input.duplicate().apply { rewind() }, diseaseOutput)
-            ?: error("The disease model is not loaded.")
-        require(diseaseOutput[0].all { it.isFinite() && it in 0f..1f }) {
-            "The disease model returned invalid scores."
+        val chosenIndex: Int
+        val confidence: Float
+        val leavesDisagree: Boolean
+        if (cropVotes.size == 1) {
+            chosenIndex = cropVotes[0].classIndex
+            confidence = cropVotes[0].classConfidence
+            if (confidence < MIN_DISEASE_CONFIDENCE) throw UncertainLeafClassificationException()
+            leavesDisagree = false
+        } else if (cropVotes.size == 2 && cropVotes[0].classIndex != cropVotes[1].classIndex) {
+            val ordered = cropVotes.sortedByDescending { it.classConfidence }
+            val gap = ordered[0].classConfidence - ordered[1].classConfidence
+            if (gap < 0.08f || ordered[0].classConfidence < MIN_DISEASE_CONFIDENCE) {
+                throw UncertainLeafClassificationException()
+            }
+            chosenIndex = ordered[0].classIndex
+            confidence = ordered[0].classConfidence
+            leavesDisagree = false
+        } else {
+            val buckets = cropVotes.groupBy { it.classIndex }
+            val winner = buckets.maxBy { entry ->
+                entry.value.size * 1000f + entry.value.map { it.classConfidence }.average().toFloat()
+            }
+            confidence = winner.value.map { it.classConfidence }.average().toFloat()
+            val share = winner.value.size.toFloat() / cropVotes.size
+            val healthy = classNames[winner.key].contains("healthy", ignoreCase = true)
+            val needed = if (healthy) 0.45f else 0.60f
+            leavesDisagree = share < needed || confidence < 0.40f
+            if (leavesDisagree && cropVotes.size <= 2) throw UncertainLeafClassificationException()
+            chosenIndex = winner.key
         }
-        require(abs(diseaseOutput[0].sum() - 1f) <= PROBABILITY_SUM_TOLERANCE) {
-            "The disease model returned invalid probabilities."
-        }
-        val allowedIndices = classNames.indices.filter { classNames[it].startsWith(cropName) }
-        require(allowedIndices.isNotEmpty()) { "No disease categories were found for $cropName." }
-
-        val allowedProbability = allowedIndices.sumOf { diseaseOutput[0][it].toDouble() }.toFloat()
-        require(allowedProbability > 0f) { "The disease model returned invalid scores." }
-        val bestIndex = allowedIndices.maxBy { diseaseOutput[0][it] }
-        val confidence = diseaseOutput[0][bestIndex] / allowedProbability
-        if (confidence < MIN_DISEASE_CONFIDENCE) {
-            throw UncertainLeafClassificationException()
-        }
-        val rawName = classNames[bestIndex]
+        val rawName = classNames[chosenIndex]
         val details = classMetadata?.getJSONObject(rawName)
             ?: error("Treatment details are missing for $rawName.")
         val recommendation = details.optString("recommendation")
         require(recommendation.isNotBlank()) { "Treatment details are missing for $rawName." }
-
         return Diagnosis(
-            crop = cropName,
+            crop = cropClassNames[cropIndex],
             cropConfidence = cropConfidence,
             disease = details.getString("display_name"),
             confidence = confidence,
             pathogen = details.optString("pathogen", "Not specified"),
             treatment = recommendation,
-            cropIsUncertain = cropConfidence < CROP_WARNING_THRESHOLD
+            cropIsUncertain = cropConfidence < CROP_WARNING_THRESHOLD,
+            leavesDisagree = leavesDisagree
         )
     }
 
-    private fun bitmapToInput(bitmap: Bitmap): ByteBuffer {
-        val resized = Bitmap.createScaledBitmap(bitmap, imageSize, imageSize, true)
+    private fun cropToFoliage(bitmap: Bitmap): Bitmap {
+        val sampleSide = 160f
+        val scale = sampleSide / max(bitmap.width, bitmap.height)
+        val sampleWidth = max(1, (bitmap.width * scale).roundToInt())
+        val sampleHeight = max(1, (bitmap.height * scale).roundToInt())
+        val sample = Bitmap.createScaledBitmap(bitmap, sampleWidth, sampleHeight, true)
+        var minX = sampleWidth
+        var minY = sampleHeight
+        var maxX = -1
+        var maxY = -1
+        var foliagePixels = 0
+        val hsv = FloatArray(3)
+        for (y in 0 until sampleHeight) {
+            for (x in 0 until sampleWidth) {
+                Color.colorToHSV(sample.getPixel(x, y), hsv)
+                val isFoliage = hsv[0] in MIN_LEAF_HUE..MAX_LEAF_HUE &&
+                    hsv[1] >= MIN_LEAF_SATURATION &&
+                    hsv[2] >= MIN_LEAF_BRIGHTNESS
+                if (isFoliage) {
+                    foliagePixels++
+                    if (x < minX) minX = x
+                    if (y < minY) minY = y
+                    if (x > maxX) maxX = x
+                    if (y > maxY) maxY = y
+                }
+            }
+        }
+        if (sample !== bitmap) sample.recycle()
+        if (maxX < minX || foliagePixels < sampleWidth * sampleHeight * 0.04f) return bitmap
+        val boxWidth = maxX - minX + 1
+        val boxHeight = maxY - minY + 1
+        if (boxWidth * boxHeight >= sampleWidth * sampleHeight * 0.55f) return bitmap
+        val inverse = 1f / scale
+        val padX = boxWidth * 0.12f
+        val padY = boxHeight * 0.12f
+        val left = ((minX - padX) * inverse).roundToInt().coerceIn(0, bitmap.width - 1)
+        val top = ((minY - padY) * inverse).roundToInt().coerceIn(0, bitmap.height - 1)
+        val right = ((maxX + 1 + padX) * inverse).roundToInt().coerceIn(left + 1, bitmap.width)
+        val bottom = ((maxY + 1 + padY) * inverse).roundToInt().coerceIn(top + 1, bitmap.height)
+        return Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
+    }
+
+    private fun letterbox(bitmap: Bitmap, size: Int): Bitmap {
+        val scale = size.toFloat() / max(bitmap.width, bitmap.height)
+        val width = max(1, (bitmap.width * scale).roundToInt())
+        val height = max(1, (bitmap.height * scale).roundToInt())
+        val resized = Bitmap.createScaledBitmap(bitmap, width, height, true)
+        val framed = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(framed)
+        canvas.drawColor(Color.BLACK)
+        canvas.drawBitmap(resized, (size - width) / 2f, (size - height) / 2f, null)
+        if (resized !== bitmap) resized.recycle()
+        return framed
+    }
+
+    private fun prepareModelInput(bitmap: Bitmap): ModelInput {
         val pixels = IntArray(imageSize * imageSize)
-        resized.getPixels(pixels, 0, imageSize, 0, 0, imageSize, imageSize)
+        bitmap.getPixels(pixels, 0, imageSize, 0, 0, imageSize, imageSize)
         val hsv = FloatArray(3)
         var leafColorPixels = 0
         var centerLeafColorPixels = 0
@@ -490,19 +692,15 @@ class MainActivity : Activity() {
             input.putFloat((color and 0xff).toFloat())
         }
         input.rewind()
-        if (resized !== bitmap) resized.recycle()
         val meanLeafBrightness = leafBrightnessSum / max(leafColorPixels, 1)
         val leafBrightnessVariance =
             leafBrightnessSquaredSum / max(leafColorPixels, 1) - meanLeafBrightness * meanLeafBrightness
         val leafColorRatio = leafColorPixels.toFloat() / pixels.size
-        if (leafColorRatio < MIN_LEAF_COLOR_RATIO ||
-            leafColorRatio > MAX_LEAF_COLOR_RATIO ||
-            centerLeafColorPixels.toFloat() / centerPixels < MIN_CENTER_LEAF_COLOR_RATIO ||
-            leafBrightnessVariance < MIN_LEAF_BRIGHTNESS_VARIANCE
-        ) {
-            throw NotLeafPhotoException()
-        }
-        return input
+        val isLeaf = leafColorRatio >= MIN_LEAF_COLOR_RATIO &&
+            leafColorRatio <= MAX_LEAF_COLOR_RATIO &&
+            centerLeafColorPixels.toFloat() / centerPixels >= MIN_CENTER_LEAF_COLOR_RATIO &&
+            leafBrightnessVariance >= MIN_LEAF_BRIGHTNESS_VARIANCE
+        return ModelInput(input, isLeaf)
     }
 
     private fun decodeImage(uri: Uri, maxDimension: Int): Bitmap {
@@ -559,8 +757,14 @@ class MainActivity : Activity() {
         resultConfidence.text = getString(R.string.result_disease_confidence, percent(result.confidence))
         resultPathogen.text = result.pathogen
         resultTreatment.text = result.treatment
-        resultWarning.visibility = if (result.cropIsUncertain) View.VISIBLE else View.GONE
-        if (result.cropIsUncertain) resultWarning.text = getString(R.string.low_confidence)
+        resultWarning.visibility = if (
+            result.cleanCanopy || result.cropIsUncertain || result.leavesDisagree
+        ) View.VISIBLE else View.GONE
+        when {
+            result.cleanCanopy -> resultWarning.text = getString(R.string.clean_canopy)
+            result.leavesDisagree -> resultWarning.text = getString(R.string.leaves_disagree)
+            result.cropIsUncertain -> resultWarning.text = getString(R.string.low_confidence)
+        }
         resultPanel.visibility = View.VISIBLE
         status.visibility = View.GONE
     }
@@ -604,8 +808,19 @@ class MainActivity : Activity() {
         val confidence: Float,
         val pathogen: String,
         val treatment: String,
-        val cropIsUncertain: Boolean
+        val cropIsUncertain: Boolean,
+        val leavesDisagree: Boolean,
+        val cleanCanopy: Boolean = false
     )
+
+    private data class PatchVote(
+        val cropIndex: Int,
+        val cropConfidence: Float,
+        val classIndex: Int,
+        val classConfidence: Float
+    )
+
+    private data class ModelInput(val buffer: ByteBuffer, val isLeaf: Boolean)
 
     private class NotLeafPhotoException : Exception()
 
@@ -621,13 +836,13 @@ class MainActivity : Activity() {
         private const val CAMERA_DIRECTORY = "camera"
         private const val PREVIEW_MAX_SIZE = 1024
         private const val CROP_WARNING_THRESHOLD = 0.85f
-        private const val MIN_LEAF_HUE = 35f
+        private const val MIN_LEAF_HUE = 12f
         private const val MAX_LEAF_HUE = 155f
-        private const val MIN_LEAF_SATURATION = 0.14f
+        private const val MIN_LEAF_SATURATION = 0.12f
         private const val MIN_LEAF_BRIGHTNESS = 0.12f
-        private const val MIN_LEAF_COLOR_RATIO = 0.12f
-        private const val MAX_LEAF_COLOR_RATIO = 0.98f
-        private const val MIN_CENTER_LEAF_COLOR_RATIO = 0.20f
+        private const val MIN_LEAF_COLOR_RATIO = 0.08f
+        private const val MAX_LEAF_COLOR_RATIO = 0.995f
+        private const val MIN_CENTER_LEAF_COLOR_RATIO = 0.10f
         private const val MIN_LEAF_BRIGHTNESS_VARIANCE = 0.0081
         private const val MIN_CROP_CONFIDENCE = 0.70f
         private const val MIN_DISEASE_CONFIDENCE = 0.35f
