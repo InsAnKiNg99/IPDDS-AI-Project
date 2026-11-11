@@ -662,44 +662,29 @@ class MainActivity : Activity() {
     private fun prepareModelInput(bitmap: Bitmap): ModelInput {
         val pixels = IntArray(imageSize * imageSize)
         bitmap.getPixels(pixels, 0, imageSize, 0, 0, imageSize, imageSize)
-        val hsv = FloatArray(3)
-        var leafColorPixels = 0
-        var centerLeafColorPixels = 0
-        var leafBrightnessSum = 0.0
-        var leafBrightnessSquaredSum = 0.0
-        val centerPixels = imageSize * imageSize / 4
+        var foliagePixels = 0
+        var countedPixels = 0
         val input = ByteBuffer.allocateDirect(imageSize * imageSize * 3 * Float.SIZE_BYTES)
             .order(ByteOrder.nativeOrder())
-        pixels.forEachIndexed { index, color ->
-            Color.colorToHSV(color, hsv)
-            val isLeafColor = hsv[0] in MIN_LEAF_HUE..MAX_LEAF_HUE &&
-                hsv[1] >= MIN_LEAF_SATURATION &&
-                hsv[2] >= MIN_LEAF_BRIGHTNESS
-            if (isLeafColor) {
-                leafColorPixels++
-                leafBrightnessSum += hsv[2]
-                leafBrightnessSquaredSum += hsv[2] * hsv[2]
-                val x = index % imageSize
-                val y = index / imageSize
-                if (x in imageSize / 4 until imageSize * 3 / 4 &&
-                    y in imageSize / 4 until imageSize * 3 / 4
-                ) {
-                    centerLeafColorPixels++
+        pixels.forEach { color ->
+            val red = (color shr 16) and 0xff
+            val green = (color shr 8) and 0xff
+            val blue = color and 0xff
+            // Black letterbox padding is not part of the photo.
+            if (red > PADDING_CHANNEL || green > PADDING_CHANNEL || blue > PADDING_CHANNEL) {
+                countedPixels++
+                // A real leaf reflects green and absorbs red and blue. Pale cloth stays gray.
+                val excessGreen = 2 * green - red - blue
+                if (excessGreen > MIN_FOLIAGE_EXCESS && green > MIN_FOLIAGE_CHANNEL && green < MAX_FOLIAGE_CHANNEL) {
+                    foliagePixels++
                 }
             }
-            input.putFloat(((color shr 16) and 0xff).toFloat())
-            input.putFloat(((color shr 8) and 0xff).toFloat())
-            input.putFloat((color and 0xff).toFloat())
+            input.putFloat(red.toFloat())
+            input.putFloat(green.toFloat())
+            input.putFloat(blue.toFloat())
         }
         input.rewind()
-        val meanLeafBrightness = leafBrightnessSum / max(leafColorPixels, 1)
-        val leafBrightnessVariance =
-            leafBrightnessSquaredSum / max(leafColorPixels, 1) - meanLeafBrightness * meanLeafBrightness
-        val leafColorRatio = leafColorPixels.toFloat() / pixels.size
-        val isLeaf = leafColorRatio >= MIN_LEAF_COLOR_RATIO &&
-            leafColorRatio <= MAX_LEAF_COLOR_RATIO &&
-            centerLeafColorPixels.toFloat() / centerPixels >= MIN_CENTER_LEAF_COLOR_RATIO &&
-            leafBrightnessVariance >= MIN_LEAF_BRIGHTNESS_VARIANCE
+        val isLeaf = countedPixels > 0 && foliagePixels.toFloat() / countedPixels >= MIN_FOLIAGE_RATIO
         return ModelInput(input, isLeaf)
     }
 
@@ -840,10 +825,11 @@ class MainActivity : Activity() {
         private const val MAX_LEAF_HUE = 155f
         private const val MIN_LEAF_SATURATION = 0.12f
         private const val MIN_LEAF_BRIGHTNESS = 0.12f
-        private const val MIN_LEAF_COLOR_RATIO = 0.08f
-        private const val MAX_LEAF_COLOR_RATIO = 0.995f
-        private const val MIN_CENTER_LEAF_COLOR_RATIO = 0.10f
-        private const val MIN_LEAF_BRIGHTNESS_VARIANCE = 0.0081
+        private const val PADDING_CHANNEL = 12
+        private const val MIN_FOLIAGE_EXCESS = 30
+        private const val MIN_FOLIAGE_CHANNEL = 35
+        private const val MAX_FOLIAGE_CHANNEL = 245
+        private const val MIN_FOLIAGE_RATIO = 0.04f
         private const val MIN_CROP_CONFIDENCE = 0.70f
         private const val MIN_DISEASE_CONFIDENCE = 0.35f
         private const val PROBABILITY_SUM_TOLERANCE = 0.01f

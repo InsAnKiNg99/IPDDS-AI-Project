@@ -823,6 +823,19 @@ def load_metadata():
         raise ValueError("model/class_indices.json has an invalid image size.")
     return names, classes, tuple(img_size)
 
+def foliage_fraction(image: Image.Image) -> float:
+    """Share of pixels with real leaf green. Pale cloth can share a leaf hue and still fail this."""
+    rgb = np.asarray(image.convert("RGB"))
+    red = rgb[:, :, 0].astype(np.int16)
+    green = rgb[:, :, 1].astype(np.int16)
+    blue = rgb[:, :, 2].astype(np.int16)
+    lit = (red > 12) | (green > 12) | (blue > 12)
+    counted = int(lit.sum())
+    if counted < 50:
+        return 0.0
+    foliage = (2 * green - red - blue > 30) & (green > 35) & (green < 245)
+    return float(foliage.sum()) / counted
+
 def validate_plant_leaf(image: Image.Image) -> tuple[bool, str]:
     """
     Validates whether an input image is a genuine plant/leaf specimen.
@@ -851,42 +864,8 @@ def validate_plant_leaf(image: Image.Image) -> tuple[bool, str]:
     if tv > 58.0:
         return False, "Synthetic noise or high-frequency non-organic pattern detected."
 
-    # 3. Foliage & Chlorophyll Color Analysis (HSV + Excess Green Index)
-    hsv = cv2.cvtColor(np_img, cv2.COLOR_RGB2HSV)
-    hue = hsv[:, :, 0]
-    sat = hsv[:, :, 1]
-    val = hsv[:, :, 2]
-
-    # Chlorophyll green spectrum (Hue 28-88, Sat >= 35, Val >= 30)
-    green_mask = (hue >= 28) & (hue <= 88) & (sat >= 35) & (val >= 30)
-    # Lesion / necrosis spectrum (Hue 14-27, Sat >= 40, Val >= 30)
-    yellow_brown_mask = (hue >= 14) & (hue < 28) & (sat >= 40) & (val >= 30)
-    foliage_mask = green_mask | yellow_brown_mask
-
-    green_ratio = float(np.mean(green_mask))
-    foliage_ratio = float(np.mean(foliage_mask))
-
-    # Excess Green Index: 2G - R - B
-    r = np_img[:, :, 0].astype(np.float32)
-    g = np_img[:, :, 1].astype(np.float32)
-    b = np_img[:, :, 2].astype(np.float32)
-    exg = 2 * g - r - b
-    exg_pos = float(np.mean(exg > 5.0))
-
-    # 4. Spatial Clustering (verify connected anatomical leaf body)
-    foliage_uint8 = foliage_mask.astype(np.uint8) * 255
-    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(foliage_uint8)
-    max_cluster_area = 0
-    if num_labels > 1:
-        max_cluster_area = int(np.max(stats[1:, cv2.CC_STAT_AREA]))
-    cluster_ratio = max_cluster_area / float(h * w)
-
-    is_plant = (
-        (green_ratio >= 0.08 or (foliage_ratio >= 0.15 and green_ratio >= 0.04) or exg_pos >= 0.12)
-        and cluster_ratio >= 0.03
-    )
-
-    if not is_plant:
+    # 3. Leaf pigment. Hue alone accepts khaki and pale green cloth.
+    if foliage_fraction(image) < 0.04:
         return False, "Specimen lacks plant foliage pigments or anatomical leaf structure."
 
     return True, "Valid leaf specimen."
@@ -1206,7 +1185,7 @@ with col_c1:
     is_valid_specimen = False
     validation_error = None
     if eval_image is not None:
-        is_valid_specimen, _validation_message = validate_plant_leaf(eval_image)
+        is_valid_specimen, _validation_message = validate_plant_leaf(crop_to_foliage(eval_image))
         if not is_valid_specimen:
             validation_error = "This photo does not look like a tomato or potato leaf. Try a closer shot of one leaf."
 
