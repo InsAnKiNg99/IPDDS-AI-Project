@@ -1,0 +1,15 @@
+﻿true_class / predicted_class,Potato___Early_blight,Potato___Late_blight,Potato___healthy,Tomato_Bacterial_spot,Tomato_Early_blight,Tomato_Late_blight,Tomato_Leaf_Mold,Tomato_Septoria_leaf_spot,Tomato_Spider_mites_Two_spotted_spider_mite,Tomato__Target_Spot,Tomato__Tomato_YellowLeaf__Curl_Virus,Tomato__Tomato_mosaic_virus,Tomato_healthy,support
+Potato___Early_blight,196,4,0,0,0,0,0,0,0,0,0,0,0,200
+Potato___Late_blight,0,197,2,0,0,1,0,0,0,0,0,0,0,200
+Potato___healthy,0,1,30,0,0,0,0,0,0,0,0,0,0,31
+Tomato_Bacterial_spot,0,0,0,413,3,1,0,6,0,1,1,0,0,425
+Tomato_Early_blight,0,3,1,4,154,13,0,10,3,10,0,2,0,200
+Tomato_Late_blight,0,7,0,6,11,346,7,0,3,1,0,0,1,382
+Tomato_Leaf_Mold,0,0,0,2,2,1,177,0,5,0,0,4,0,191
+Tomato_Septoria_leaf_spot,0,1,0,10,2,5,2,321,3,5,0,4,1,354
+Tomato_Spider_mites_Two_spotted_spider_mite,0,0,0,0,0,0,0,0,329,4,1,1,0,335
+Tomato__Target_Spot,0,0,0,4,0,0,0,2,13,252,0,1,9,281
+Tomato__Tomato_YellowLeaf__Curl_Virus,0,0,0,11,0,0,2,1,6,0,1047,4,0,1071
+Tomato__Tomato_mosaic_virus,0,0,0,0,0,0,0,0,0,0,0,74,0,74
+Tomato_healthy,0,0,0,0,0,0,0,0,4,2,0,0,312,318
+predicted_total,196,213,33,450,172,367,188,340,366,275,1049,90,323,4062

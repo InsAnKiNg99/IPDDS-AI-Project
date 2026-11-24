@@ -1,0 +1,30 @@
+{
+  "evaluation_type": "recomputed official holdout validation, not independent test",
+  "dataset": [
+    "mohitsingh1804/plantvillage"
+  ],
+  "validation_images": 4062,
+  "training_images": 16236,
+  "duplicate_images_removed": 14,
+  "image_size": [
+    160,
+    160
+  ],
+  "baseline_model": {
+    "accuracy": 0.947316586971283,
+    "macro_recall": 0.9424120655782653,
+    "macro_f1": 0.9342420265050865,
+    "confusion_matrix_csv": "baseline_backup_validation_confusion_matrix.csv"
+  },
+  "whole_plant_adapted_model": {
+    "accuracy": 0.9288527818808469,
+    "macro_recall": 0.9283883769654384,
+    "macro_f1": 0.9192159427190845,
+    "confusion_matrix_csv": "whole_plant_adapted_validation_confusion_matrix.csv"
+  },
+  "independent_test_accuracy": null,
+  "independent_test_note": "No separate labeled independent test set was available.",
+  "accuracy_loss_by_epoch": "Not recoverable: the original fit History was not saved.",
+  "exact_completed_epochs": null,
+  "epoch_note": "The committed adaptation CLI default allows up to 8 epochs with early stopping; the actual count was not persisted."
+}

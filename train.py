@@ -920,7 +920,7 @@ def adapt_whole_plant(
         paths_by_label[label].append(path)
     img_size = (160, 160)
     val_ds = create_dataset(validation_examples, batch_size, img_size, shuffle=False, seed=7, training=False)
-    model = tf.keras.models.load_model(os.path.join(output_dir, "disease_model.keras"), compile=False)
+    model = tf.keras.models.load_model(os.path.join(output_dir, "disease_model.h5"), compile=False)
     compile_disease_model(model, learning_rate=1e-5)
     baseline_weights = model.get_weights()
     baseline = model.evaluate(val_ds, verbose=0, return_dict=True)
@@ -952,6 +952,28 @@ def adapt_whole_plant(
     unfreeze_backbone_top(model, trainable_layers=30)
     compile_disease_model(model, learning_rate=2e-5)
     class_weights = disease_class_weights([int(np.sum(labels == index)) for index in range(len(POTATO_TOMATO_CLASSES))])
+    history_path = os.path.join(output_dir, "whole_plant_adaptation_history.json")
+    history_records = []
+
+    class PersistAdaptationHistory(callbacks.Callback):
+        def on_epoch_end(self, epoch, logs=None):
+            history_records.append({
+                "epoch": int(epoch + 1),
+                **{name: float(value) for name, value in (logs or {}).items() if value is not None},
+            })
+            best_epoch = None
+            if any("val_accuracy" in record for record in history_records):
+                best_epoch = max(
+                    (record for record in history_records if "val_accuracy" in record),
+                    key=lambda record: record["val_accuracy"],
+                )["epoch"]
+            with open(history_path, "w", encoding="utf-8") as history_file:
+                json.dump({
+                    "epochs_completed": len(history_records),
+                    "best_epoch": best_epoch,
+                    "history": history_records,
+                }, history_file, indent=2)
+
     history = model.fit(
         images,
         labels,
@@ -959,12 +981,25 @@ def adapt_whole_plant(
         epochs=epochs,
         batch_size=batch_size,
         class_weight=class_weights,
-        callbacks=[callbacks.EarlyStopping(monitor="val_accuracy", patience=2, restore_best_weights=True)],
+        callbacks=[
+            callbacks.EarlyStopping(monitor="val_accuracy", patience=2, restore_best_weights=True),
+            PersistAdaptationHistory(),
+        ],
         verbose=2,
     )
     adapted = model.evaluate(val_ds, verbose=0, return_dict=True)
     adapted_accuracy = float(adapted["accuracy"])
     print(f"Adapted held-out accuracy: {adapted_accuracy:.4f}")
+    best_epoch = int(np.argmax(history.history["val_accuracy"]) + 1)
+    with open(os.path.join(output_dir, "whole_plant_adaptation_run.json"), "w", encoding="utf-8") as run_file:
+        json.dump({
+            "epochs_completed": len(history.epoch),
+            "best_epoch": best_epoch,
+            "baseline_validation_accuracy": baseline_accuracy,
+            "adapted_validation_accuracy": adapted_accuracy,
+            "adaptation_accepted": adapted_accuracy + 0.03 >= baseline_accuracy,
+            "history_file": os.path.basename(history_path),
+        }, run_file, indent=2)
     if adapted_accuracy + 0.03 < baseline_accuracy:
         model.set_weights(baseline_weights)
         print("Adaptation lowered the held-out score too far, so the previous model was kept.")
@@ -1009,8 +1044,8 @@ def adapt_whole_plant(
     ):
         with open(os.path.join(android_assets_dir, file_name), "w", encoding="utf-8") as metadata_file:
             json.dump(payload, metadata_file, indent=2)
-    best_epoch = max(history.history.get("val_accuracy", [adapted_accuracy]))
-    print(f"[+] Best adaptation validation accuracy this run: {best_epoch:.4f}")
+    best_val_accuracy = float(max(history.history["val_accuracy"]))
+    print(f"[+] Best adaptation validation accuracy this run: {best_val_accuracy:.4f} (epoch {best_epoch})")
     print("[+] Disease model updated for multi-leaf photos. The crop model was left as it was.")
 
 
